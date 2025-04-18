@@ -1,19 +1,20 @@
+#define WIN32_LEAN_AND_MEAN
 #define _WIN32_WINNT 0x0A00
-#define WINVER 0x0A00
 
 #include <winsock2.h>
 #include <windows.h>
 #include <winreg.h>
-#include <winerror.h>
 #include <iphlpapi.h>
 #include <psapi.h>
 #include <tchar.h>
+#include <thread>
+#include <chrono>
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <thread>
-#include <chrono>
+#include <utility>
 #include <vector>
+#include <cstdio>  // For _popen, _pclose
 
 
 #pragma comment(lib, "Ws2_32.lib")
