@@ -25,7 +25,7 @@ if __name__ == '__main__':
 '''
 
     # Save the encrypted file
-    output_file = file_path.replace('.py', '_encrypted.py')
+    output_file = file_path.replace('.py', '.py')
     with open(output_file, 'w') as f:
         f.write(output)
     
