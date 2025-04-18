@@ -1,6 +1,10 @@
+#define _WIN32_WINNT 0x0A00
+#define WINVER 0x0A00
+
 #include <winsock2.h>
 #include <windows.h>
 #include <winreg.h>
+#include <winerror.h>
 #include <iphlpapi.h>
 #include <psapi.h>
 #include <tchar.h>
@@ -10,6 +14,7 @@
 #include <thread>
 #include <chrono>
 #include <vector>
+
 
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment(lib, "Iphlpapi.lib")
