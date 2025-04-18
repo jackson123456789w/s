@@ -10,7 +10,7 @@ current_client_id = None
 
 def handle_client(conn, addr, client_id):
     print(Fore.GREEN + f"[+] {client_id} connected from {addr}")
-    conn.send(b'Connected to TeamViewer CLI\n')
+    conn.send(b'Connected to medusa\n')
     while True:
         try:
             data = conn.recv(4096)
