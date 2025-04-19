@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QThread, Signal
+from win10toast import ToastNotifier
 import PyPDF2  # For PDF scanning
 from PIL import Image
 import io
@@ -42,7 +43,13 @@ THREAT_DATABASE_JSON = {
 QUARANTINE_DIR = os.path.join(os.getcwd(), "quarantine")
 LOG_FILE = "antivirus_log.txt"
 MACHINE_LEARNING_MODEL_PATH = "ml_model.h5"  # Machine learning model for file classification
-RANSOMWARE_EXTENSION_LIST = [".encrypted", ".locked", ".ransom", ".crypto"]  # Add more extensions as needed
+RANSOMWARE_EXTENSION_LIST = [".encrypted", ".locked", ".ransom", ".crypto", ".wncry", ".wncryt", ".wcry"]  # Add more extensions as needed
+
+# Notification System
+toaster = ToastNotifier()
+
+def notify(title, message):
+    toaster.show_toast(title, message, duration=10, threaded=True)
 
 # === Antivirus Core ===
 def hash_file(path):
@@ -63,8 +70,17 @@ def quarantine_file(path):
         target = os.path.join(QUARANTINE_DIR, basename)
         shutil.move(path, target)
         log(f"[!] Quarantined: {path}")
+        notify("Threat Quarantined", f"The file {path} has been moved to quarantine.")
     except Exception as e:
         log(f"[!] Failed to quarantine {path}: {e}")
+
+def delete_file(path):
+    try:
+        os.remove(path)
+        log(f"[!] Deleted: {path}")
+        notify("Threat Removed", f"The file {path} has been deleted.")
+    except Exception as e:
+        log(f"[!] Failed to delete {path}: {e}")
 
 # Load machine learning model
 def load_ml_model():
@@ -134,11 +150,24 @@ def detect_metasploit_activity():
         # Check for active processes and their associated ports
         for proc in psutil.process_iter(['pid', 'name', 'connections']):
             for conn in proc.info['connections']:
-                if conn.status == 'LISTEN' and conn.laddr.port == 4444:  # Default Metasploit port
-                    log(f"[!!] Metasploit-related activity detected (Port 4444): Process {proc.info['name']} with PID {proc.info['pid']}")
+                if conn.status == 'LISTEN' and conn.laddr.port in [4444, 5555, 6666]:  # Common Metasploit ports
+                    log(f"[!!] Metasploit-related activity detected (Port {conn.laddr.port}): Process {proc.info['name']} with PID {proc.info['pid']}")
                     return True
     except Exception as e:
         log(f"[!] Error checking for Metasploit activity: {e}")
+    return False
+
+# Detect Reverse Shells and RATs
+def detect_reverse_shells():
+    try:
+        for proc in psutil.process_iter(['pid', 'name', 'connections']):
+            for conn in proc.info['connections']:
+                if conn.status == 'ESTABLISHED' and conn.raddr:
+                    if conn.raddr.port in [22, 23, 3389, 4444, 5555]:  # Common reverse shell/RAT ports
+                        log(f"[!!] Potential reverse shell detected: Process {proc.info['name']} with PID {proc.info['pid']}")
+                        return True
+    except Exception as e:
+        log(f"[!] Error checking for reverse shells: {e}")
     return False
 
 # === Real-Time File Watcher ===
