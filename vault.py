@@ -2,77 +2,83 @@ import os
 import base64
 import marshal
 from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
+from Crypto.Protocol.KDF import PBKDF2
 from Crypto.Random import get_random_bytes
 
-BLOCK_SIZE = 16  # AES block size
-KEY_SIZE = 32    # AES-256 key size
-SECTOR_SIZE = 512  # Standard disk sector size
+BLOCK_SIZE = 16       # AES block size
+KEY_SIZE = 32         # AES-256 key size
+SECTOR_SIZE = 512     # Disk sector size
+PBKDF2_ITER = 100_000 # Key derivation iterations
 
 class VaultLocker:
-    def __init__(self, pin):
+    def __init__(self, pin, salt=None):
         self.pin = pin
-        self.key = self.generate_key(pin)
+        self.salt = salt or get_random_bytes(16)
+        self.key = self.generate_key(pin, self.salt)
 
-    def generate_key(self, pin):
-        # Derive a 32-byte AES key from the PIN
-        return base64.urlsafe_b64encode(pin.encode('utf-8')).ljust(KEY_SIZE)[:KEY_SIZE]
+    def generate_key(self, pin, salt):
+        return PBKDF2(pin, salt, dkLen=KEY_SIZE, count=PBKDF2_ITER)
 
     def encrypt_disk(self, disk_path):
-        # Encrypt the entire disk at the block level
         with open(disk_path, 'r+b') as disk:
             while True:
                 sector = disk.read(SECTOR_SIZE)
-                if not sector:  # End of disk
+                if not sector:
                     break
                 if len(sector) < SECTOR_SIZE:
-                    sector = pad(sector, SECTOR_SIZE)  # Pad the last sector if needed
-                cipher = AES.new(self.key, AES.MODE_CBC)
-                encrypted_sector = cipher.iv + cipher.encrypt(sector)
-                disk.seek(-len(sector), os.SEEK_CUR)
-                disk.write(encrypted_sector)
+                    sector += b'\x00' * (SECTOR_SIZE - len(sector))
+
+                iv = get_random_bytes(BLOCK_SIZE)
+                cipher = AES.new(self.key, AES.MODE_CBC, iv)
+                encrypted_sector = cipher.encrypt(sector)
+
+                disk.seek(-SECTOR_SIZE, os.SEEK_CUR)
+                disk.write(iv + encrypted_sector)  # Write IV + encrypted data
 
     def create_vault_reader(self, output_path):
-        # Generate VaultReader code with the encrypted PIN
-        encrypted_pin = base64.b64encode(marshal.dumps(self.key)).decode('utf-8')
+        encrypted_key_blob = marshal.dumps({
+            'salt': self.salt,
+            'pbkdf2_iter': PBKDF2_ITER
+        })
+        encoded_blob = base64.b64encode(encrypted_key_blob).decode()
 
-        vault_reader_code = f"""
+        vault_reader_code = f'''\
 import os
 import base64
 import marshal
 from Crypto.Cipher import AES
-from Crypto.Util.Padding import unpad
+from Crypto.Protocol.KDF import PBKDF2
 
 BLOCK_SIZE = 16
 SECTOR_SIZE = 512
+KEY_SIZE = 32
 
-def decrypt_disk(disk_path, key):
+def decrypt_disk(disk_path, pin, salt, iterations):
+    key = PBKDF2(pin, salt, dkLen=KEY_SIZE, count=iterations)
     with open(disk_path, 'r+b') as disk:
         while True:
             iv = disk.read(BLOCK_SIZE)
-            if not iv:  # End of disk
+            if not iv:
                 break
             encrypted_sector = disk.read(SECTOR_SIZE)
+            if len(encrypted_sector) < SECTOR_SIZE:
+                break  # corrupted or incomplete
             cipher = AES.new(key, AES.MODE_CBC, iv)
-            decrypted_sector = unpad(cipher.decrypt(encrypted_sector), SECTOR_SIZE)
-            disk.seek(-len(encrypted_sector) - BLOCK_SIZE, os.SEEK_CUR)
+            decrypted_sector = cipher.decrypt(encrypted_sector)
+            disk.seek(-SECTOR_SIZE - BLOCK_SIZE, os.SEEK_CUR)
             disk.write(decrypted_sector)
 
 def main():
-    encrypted_key = "{encrypted_pin}"
-    key = marshal.loads(base64.b64decode(encrypted_key))
+    metadata = base64.b64decode("{encoded_blob}")
+    params = marshal.loads(metadata)
     pin = input("Enter PIN to unlock USB: ")
-    derived_key = base64.urlsafe_b64encode(pin.encode('utf-8')).ljust(32)[:32]
-    if derived_key != key:
-        print("Invalid PIN! Access denied.")
-        return
-    usb_path = input("Enter the USB device path to unlock (e.g., /dev/sdb): ")
-    decrypt_disk(usb_path, key)
+    path = input("Enter the USB device path (e.g., /dev/sdb): ")
+    decrypt_disk(path, pin, params['salt'], params['pbkdf2_iter'])
     print("USB unlocked successfully!")
 
 if __name__ == "__main__":
     main()
-"""
+'''
 
         with open(output_path, 'w') as f:
             f.write(vault_reader_code)
@@ -87,6 +93,6 @@ if __name__ == "__main__":
     print("Disk encryption complete!")
 
     print("Generating VaultReader...")
-    output_path = input("Enter the path to save VaultReader (e.g., usbx-01.py): ")
+    output_path = input("Enter the path to save VaultReader (e.g., vault_reader.py): ")
     locker.create_vault_reader(output_path)
     print(f"VaultReader created at {output_path}")
