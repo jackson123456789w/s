@@ -27,6 +27,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QThread, Signal
+import PyPDF2  # For PDF scanning
+from PIL import Image
+import io
 
 # === Antivirus Core ===
 THREAT_DATABASE_JSON = {
@@ -82,6 +85,34 @@ def advanced_heuristic_check(path):
         log(f"[!] Error scanning file with advanced heuristic: {e}")
     return False
 
+# PDF Detection - Scan for malicious JavaScript or embedded suspicious elements in PDFs
+def scan_pdf_for_threats(path):
+    try:
+        with open(path, "rb") as f:
+            reader = PyPDF2.PdfFileReader(f)
+            for i in range(reader.getNumPages()):
+                page = reader.getPage(i)
+                if '/JavaScript' in page['/Resources']:
+                    log(f"[!!] JavaScript found in PDF: {path}")
+                    return True
+    except Exception as e:
+        log(f"[!] Error scanning PDF {path}: {e}")
+    return False
+
+# Basic Steganography Detection - Detect hidden messages or data in images
+def detect_steganography_in_image(path):
+    try:
+        with Image.open(path) as img:
+            pixels = np.array(img)
+            # Check for a high amount of compression or patterns that might indicate hidden data
+            diff_pixels = np.diff(pixels)
+            if np.count_nonzero(diff_pixels) < 100:  # Example threshold
+                log(f"[!!] Potential steganography detected in image: {path}")
+                return True
+    except Exception as e:
+        log(f"[!] Error scanning image for steganography {path}: {e}")
+    return False
+
 def scan_file(path, model=None):
     md5 = hash_file(path)
     if not md5:
@@ -91,6 +122,12 @@ def scan_file(path, model=None):
         quarantine_file(path)
     elif advanced_heuristic_check(path):
         log(f"[!!] Advanced heuristic threat detected: {path}")
+        quarantine_file(path)
+    elif path.lower().endswith(".pdf") and scan_pdf_for_threats(path):
+        log(f"[!!] PDF threat detected: {path}")
+        quarantine_file(path)
+    elif path.lower().endswith((".png", ".jpg", ".jpeg")) and detect_steganography_in_image(path):
+        log(f"[!!] Steganography detected in image: {path}")
         quarantine_file(path)
     elif model:
         prediction = model.predict(np.array([extract_features(path)]))
