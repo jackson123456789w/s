@@ -30,6 +30,7 @@ import PyPDF2  # For PDF scanning
 from PIL import Image
 import io
 import socket
+import sys
 
 # === Additional Configurations ===
 THREAT_DATABASE_JSON = {
