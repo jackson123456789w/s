@@ -4,26 +4,38 @@ import time
 import shutil
 import hashlib
 import threading
-import winreg
 import psutil
 import numpy as np
 import tensorflow as tf
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from stegpy import analyze
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QVBoxLayout,
+    QWidget,
+    QLabel,
+    QPushButton,
+    QTextEdit,
+    QFileDialog,
+    QMessageBox,
+    QProgressBar,
+    QSystemTrayIcon,
+    QMenu,
+    QAction
+)
+from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt, QThread, Signal
 
-# === Config ===
+# === Antivirus Core ===
 SIGNATURES = {
     "44d88612fea8a8f36de82e1278abb02f": "EICAR-Test-File"
 }
-WATCH_PATH = "C:\\Users"
 QUARANTINE_DIR = os.path.join(os.getcwd(), "quarantine")
 LOG_FILE = "antivirus_log.txt"
-SCRIPT_EXTENSIONS = [".bat", ".vbs", ".ps1", ".cmd", ".exe", ".cpp", ".py"]
 MACHINE_LEARNING_MODEL_PATH = "ml_model.h5"  # Machine learning model for file classification
-NETWORK_MONITOR = True
+THREAT_DATABASE_URL = "https://example.com/api/threats"  # Placeholder for cloud threat database
 
-# === Utilities ===
 def hash_file(path):
     try:
         with open(path, "rb") as f:
@@ -34,19 +46,6 @@ def hash_file(path):
 def log(msg):
     with open(LOG_FILE, "a") as f:
         f.write(f"{time.ctime()}: {msg}\n")
-    print(msg)
-
-def add_to_startup():
-    try:
-        exe_path = sys.executable
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                             r"Software\Microsoft\Windows\CurrentVersion\Run",
-                             0, winreg.KEY_SET_VALUE)
-        winreg.SetValueEx(key, "PythonAntivirus", 0, winreg.REG_SZ, exe_path)
-        winreg.CloseKey(key)
-        log("[*] Added to startup.")
-    except Exception as e:
-        log(f"[!] Failed to add to startup: {e}")
 
 def quarantine_file(path):
     try:
@@ -58,7 +57,6 @@ def quarantine_file(path):
     except Exception as e:
         log(f"[!] Failed to quarantine {path}: {e}")
 
-# === Machine Learning Detection ===
 def load_ml_model():
     try:
         model = tf.keras.models.load_model(MACHINE_LEARNING_MODEL_PATH)
@@ -68,28 +66,10 @@ def load_ml_model():
         log(f"[!] Failed to load machine learning model: {e}")
         return None
 
-def ml_predict(path, model):
-    # Extract features like file byte sequences, metadata, etc.
-    file_features = extract_features(path)
-    prediction = model.predict(np.array([file_features]))  # Assuming the model accepts this format
-    return prediction
-
-# === Feature Extraction for Machine Learning ===
-def extract_features(path):
-    # Example of feature extraction: file size, byte frequency, etc.
-    file_size = os.path.getsize(path)
-    file_hash = hash_file(path)
-    with open(path, "rb") as f:
-        data = f.read()
-    byte_frequencies = np.array([data.count(i) for i in range(256)])  # Byte frequency histogram
-    return np.concatenate([byte_frequencies, [file_size], [file_hash]], axis=0)
-
-# === Heuristic Detection ===
 def advanced_heuristic_check(path):
     suspicious_patterns = [
         b"VirtualAllocEx", b"CreateRemoteThread", b"WinExec", b"LoadLibraryA", b"GetProcAddress", b"SetWindowsHookEx"
     ]
-    
     try:
         with open(path, "rb") as f:
             data = f.read()
@@ -100,47 +80,6 @@ def advanced_heuristic_check(path):
         log(f"[!] Error scanning file with advanced heuristic: {e}")
     return False
 
-# === Real-Time Network Monitoring ===
-def network_monitor():
-    if NETWORK_MONITOR:
-        # Monitor outgoing connections for suspicious activity
-        connections = psutil.net_connections(kind='inet')
-        for conn in connections:
-            if conn.status == "ESTABLISHED" and conn.raddr:
-                remote_ip = conn.raddr[0]
-                log(f"[Network Alert] Outbound connection to suspicious IP: {remote_ip}")
-
-# === Memory Scanning (Processes and Open Handles) ===
-def memory_scan():
-    for proc in psutil.process_iter(['pid', 'name']):
-        try:
-            proc_name = proc.info['name']
-            if proc_name in ['powershell', 'cmd', 'python']:
-                # Further analysis can be added here based on process behavior
-                log(f"[Memory Scan] Suspicious process detected: {proc_name} (PID: {proc.info['pid']})")
-        except psutil.NoSuchProcess:
-            pass
-
-# === Real-time Watcher ===
-class ThreatWatcher(FileSystemEventHandler):
-    def on_created(self, event):
-        if not event.is_directory:
-            scan_file(event.src_path)
-
-def watch_directory(path):
-    observer = Observer()
-    handler = ThreatWatcher()
-    observer.schedule(handler, path, recursive=True)
-    observer.start()
-    log(f"[*] Watching directory: {path}")
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        observer.stop()
-    observer.join()
-
-# === Scanner ===
 def scan_file(path, model=None):
     md5 = hash_file(path)
     if not md5:
@@ -152,65 +91,173 @@ def scan_file(path, model=None):
         log(f"[!!] Advanced heuristic threat detected: {path}")
         quarantine_file(path)
     elif model:
-        prediction = ml_predict(path, model)
-        if prediction > 0.5:  # Example threshold, tune based on model
+        prediction = model.predict(np.array([extract_features(path)]))
+        if prediction > 0.5:  # Example threshold
             log(f"[!!] Machine Learning threat detected: {path}")
             quarantine_file(path)
-    elif any(path.endswith(ext) for ext in SCRIPT_EXTENSIONS):
-        scan_script(path)  # Check for suspicious scripts
-    elif path.lower().endswith((".exe", ".cpp", ".py")):  # Added support for .exe, .cpp, .py
-        log(f"[*] Scanning executable/script file: {path}")
-        scan_executable(path)  # Check for malicious executables or scripts
     else:
-        log(f"[!] Unknown file type: {path}")
+        log(f"[!] No threats detected: {path}")
 
-# === Script Detection ===
-def scan_script(path):
-    try:
-        with open(path, "r", encoding="latin-1") as f:
-            data = f.read()
-            # Check for common commands in scripts that are often used in malicious files
-            if "powershell" in data or "cmd.exe" in data or "wscript" in data:
-                log(f"[!!] Potential malicious script detected: {path}")
-                quarantine_file(path)
-    except Exception as e:
-        log(f"[!] Error scanning script {path}: {e}")
+def extract_features(path):
+    file_size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        data = f.read()
+    byte_frequencies = np.array([data.count(i) for i in range(256)])  # Byte frequency histogram
+    return np.concatenate([byte_frequencies, [file_size]])
 
-# === Executable (EXE) Detection ===
-def scan_executable(path):
-    try:
-        with open(path, "rb") as f:
-            data = f.read()
-            # Look for common signs of malicious executables like embedded payloads or unusual API calls
-            if b"CreateRemoteThread" in data or b"VirtualAllocEx" in data:
-                log(f"[!!] Malicious executable detected: {path}")
-                quarantine_file(path)
-    except Exception as e:
-        log(f"[!] Error scanning executable {path}: {e}")
+# === Real-Time File Watcher ===
+class RealTimeFileWatcher(FileSystemEventHandler):
+    def __init__(self, model):
+        self.model = model
 
-def scan_directory(path, model=None):
-    for root, _, files in os.walk(path):
-        for file in files:
-            scan_file(os.path.join(root, file), model)
+    def on_created(self, event):
+        if not event.is_directory:
+            scan_file(event.src_path, self.model)
+
+def start_real_time_scanning(path, model):
+    observer = Observer()
+    event_handler = RealTimeFileWatcher(model)
+    observer.schedule(event_handler, path, recursive=True)
+    observer.start()
+    log(f"[*] Real-time scanning started on: {path}")
+    return observer
+
+# === Antivirus Thread ===
+class AntivirusThread(QThread):
+    log_signal = Signal(str)
+    progress_signal = Signal(int)
+
+    def __init__(self, path, model=None):
+        super().__init__()
+        self.path = path
+        self.model = model
+
+    def run(self):
+        files = []
+        if os.path.isfile(self.path):
+            files = [self.path]
+        elif os.path.isdir(self.path):
+            for root, _, filenames in os.walk(self.path):
+                files.extend([os.path.join(root, f) for f in filenames])
+
+        total_files = len(files)
+        for i, file in enumerate(files):
+            scan_file(file, self.model)
+            self.log_signal.emit(f"Scanned file: {file}")
+            progress = int((i + 1) / total_files * 100)
+            self.progress_signal.emit(progress)
+
+# === GUI Implementation ===
+class AntivirusApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Vortex Antivirus")
+        self.setGeometry(100, 100, 800, 600)
+        self.model = load_ml_model()
+        self.observer = None
+
+        # Central Widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QVBoxLayout(central_widget)
+
+        # Log Viewer
+        self.log_viewer = QTextEdit()
+        self.log_viewer.setReadOnly(True)
+        layout.addWidget(QLabel("Antivirus Logs:"))
+        layout.addWidget(self.log_viewer)
+
+        # Progress Bar
+        self.progress_bar = QProgressBar()
+        layout.addWidget(self.progress_bar)
+
+        # Buttons
+        self.scan_button = QPushButton("Scan File/Folder")
+        self.scan_button.clicked.connect(self.scan_file_or_folder)
+        layout.addWidget(self.scan_button)
+
+        self.clear_logs_button = QPushButton("Clear Logs")
+        self.clear_logs_button.clicked.connect(self.clear_logs)
+        layout.addWidget(self.clear_logs_button)
+
+        self.real_time_button = QPushButton("Start Real-Time Scanning")
+        self.real_time_button.clicked.connect(self.start_real_time_scanning)
+        layout.addWidget(self.real_time_button)
+
+        # System Tray Setup
+        self.tray_icon = QSystemTrayIcon(QIcon("antivirus_icon.png"), self)
+        self.tray_icon.setToolTip("Vortex Antivirus is running in the background")
+        tray_menu = QMenu()
+
+        open_action = QAction("Open Vortex Antivirus")
+        open_action.triggered.connect(self.show)
+        tray_menu.addAction(open_action)
+
+        quit_action = QAction("Quit")
+        quit_action.triggered.connect(self.quit_application)
+        tray_menu.addAction(quit_action)
+
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.show()
+
+        self.refresh_logs()
+
+    def closeEvent(self, event):
+        """Override the close event to minimize to the system tray."""
+        event.ignore()
+        self.hide()
+        self.tray_icon.showMessage(
+            "Vortex Antivirus",
+            "Vortex Antivirus is still running in the background.",
+            QSystemTrayIcon.Information,
+            3000
+        )
+
+    def scan_file_or_folder(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Folder to Scan")
+        if path:
+            self.log_viewer.append(f"Scanning started for: {path}")
+            self.antivirus_thread = AntivirusThread(path, self.model)
+            self.antivirus_thread.log_signal.connect(self.update_log)
+            self.antivirus_thread.progress_signal.connect(self.update_progress)
+            self.antivirus_thread.start()
+
+    def update_log(self, message):
+        self.log_viewer.append(message)
+
+    def update_progress(self, value):
+        self.progress_bar.setValue(value)
+
+    def clear_logs(self):
+        if QMessageBox.question(self, "Clear Logs", "Are you sure you want to clear the logs?") == QMessageBox.Yes:
+            open(LOG_FILE, "w").close()
+            self.log_viewer.clear()
+
+    def refresh_logs(self):
+        if os.path.exists(LOG_FILE):
+            with open(LOG_FILE, "r") as f:
+                self.log_viewer.setText(f.read())
+
+    def start_real_time_scanning(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Folder for Real-Time Scanning")
+        if path:
+            if self.observer:
+                self.observer.stop()
+            self.observer = start_real_time_scanning(path, self.model)
+
+    def quit_application(self):
+        """Quit the application."""
+        if self.observer:
+            self.observer.stop()
+        self.tray_icon.hide()
+        QApplication.quit()
 
 # === Main Function ===
 def main():
-    log("\n===== Python Ultra-Advanced Antivirus Started =====")
-    add_to_startup()
-
-    model = load_ml_model()  # Load machine learning model for file classification
-    t1 = threading.Thread(target=scan_directory, args=(WATCH_PATH, model), daemon=True)
-    t2 = threading.Thread(target=watch_directory, args=(WATCH_PATH,), daemon=True)
-    t3 = threading.Thread(target=network_monitor, daemon=True)
-    t4 = threading.Thread(target=memory_scan, daemon=True)
-    
-    t1.start()
-    t2.start()
-    t3.start()
-    t4.start()
-
-    while True:
-        time.sleep(10)
+    app = QApplication(sys.argv)
+    window = AntivirusApp()
+    window.show()
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()
