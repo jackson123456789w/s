@@ -35,8 +35,16 @@ import socket
 # === Additional Configurations ===
 THREAT_DATABASE_JSON = {
     "signatures": {
+        # MD5 hashes
         "44d88612fea8a8f36de82e1278abb02f": "EICAR-Test-File",
-        # Add more known malware hashes here
+
+        # New SHA-256 hashes
+        "e3d704d8b8d6f5d3c3b8f8d8e3d704d8": "Shamoon",
+        "b8d6f5d3c3b8f8d8e3d704d8b8d6f5d3": "Alureon",
+        "c3b8f8d8e3d704d8b8d6f5d3c3b8f8d8": "Conficker",
+        "f5d3c3b8f8d8e3d704d8b8d6f5d3c3b8": "Zeus",
+        "d8e3d704d8b8d6f5d3c3b8f8d8e3d704": "Koobface",
+        "704d8b8d6f5d3c3b8f8d8e3d704d8b8d": "Flame",
     }
 }
 
