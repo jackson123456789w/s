@@ -2,7 +2,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 class RedirectHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if "zsbitovska.com" in self.headers.get('Host', ''):
+        if "zsbitovska.cz" in self.headers.get('Host', ''):
             self.send_response(302)
             self.send_header('Location', 'https://www.google.com')
             self.end_headers()
