@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 import shutil
 import hashlib
@@ -30,17 +29,22 @@ from PySide6.QtCore import Qt, QThread, Signal
 import PyPDF2  # For PDF scanning
 from PIL import Image
 import io
+import socket
 
-# === Antivirus Core ===
+# === Additional Configurations ===
 THREAT_DATABASE_JSON = {
     "signatures": {
-        "44d88612fea8a8f36de82e1278abb02f": "EICAR-Test-File"
+        "44d88612fea8a8f36de82e1278abb02f": "EICAR-Test-File",
+        # Add more known malware hashes here
     }
 }
+
 QUARANTINE_DIR = os.path.join(os.getcwd(), "quarantine")
 LOG_FILE = "antivirus_log.txt"
 MACHINE_LEARNING_MODEL_PATH = "ml_model.h5"  # Machine learning model for file classification
+RANSOMWARE_EXTENSION_LIST = [".encrypted", ".locked", ".ransom", ".crypto"]  # Add more extensions as needed
 
+# === Antivirus Core ===
 def hash_file(path):
     try:
         with open(path, "rb") as f:
@@ -62,6 +66,7 @@ def quarantine_file(path):
     except Exception as e:
         log(f"[!] Failed to quarantine {path}: {e}")
 
+# Load machine learning model
 def load_ml_model():
     try:
         model = tf.keras.models.load_model(MACHINE_LEARNING_MODEL_PATH)
@@ -71,6 +76,7 @@ def load_ml_model():
         log(f"[!] Failed to load machine learning model: {e}")
         return None
 
+# Advanced Heuristic Check
 def advanced_heuristic_check(path):
     suspicious_patterns = [
         b"VirtualAllocEx", b"CreateRemoteThread", b"WinExec", b"LoadLibraryA", b"GetProcAddress", b"SetWindowsHookEx"
@@ -85,7 +91,7 @@ def advanced_heuristic_check(path):
         log(f"[!] Error scanning file with advanced heuristic: {e}")
     return False
 
-# PDF Detection - Scan for malicious JavaScript or embedded suspicious elements in PDFs
+# PDF Detection (Malicious JavaScript or embedded suspicious elements)
 def scan_pdf_for_threats(path):
     try:
         with open(path, "rb") as f:
@@ -99,12 +105,11 @@ def scan_pdf_for_threats(path):
         log(f"[!] Error scanning PDF {path}: {e}")
     return False
 
-# Basic Steganography Detection - Detect hidden messages or data in images
+# Steganography Detection (Hidden messages or data in images)
 def detect_steganography_in_image(path):
     try:
         with Image.open(path) as img:
             pixels = np.array(img)
-            # Check for a high amount of compression or patterns that might indicate hidden data
             diff_pixels = np.diff(pixels)
             if np.count_nonzero(diff_pixels) < 100:  # Example threshold
                 log(f"[!!] Potential steganography detected in image: {path}")
@@ -113,36 +118,28 @@ def detect_steganography_in_image(path):
         log(f"[!] Error scanning image for steganography {path}: {e}")
     return False
 
-def scan_file(path, model=None):
-    md5 = hash_file(path)
-    if not md5:
-        return
-    if md5 in THREAT_DATABASE_JSON["signatures"]:
-        log(f"[!!] Signature match ({THREAT_DATABASE_JSON['signatures'][md5]}): {path}")
-        quarantine_file(path)
-    elif advanced_heuristic_check(path):
-        log(f"[!!] Advanced heuristic threat detected: {path}")
-        quarantine_file(path)
-    elif path.lower().endswith(".pdf") and scan_pdf_for_threats(path):
-        log(f"[!!] PDF threat detected: {path}")
-        quarantine_file(path)
-    elif path.lower().endswith((".png", ".jpg", ".jpeg")) and detect_steganography_in_image(path):
-        log(f"[!!] Steganography detected in image: {path}")
-        quarantine_file(path)
-    elif model:
-        prediction = model.predict(np.array([extract_features(path)]))
-        if prediction > 0.5:  # Example threshold
-            log(f"[!!] Machine Learning threat detected: {path}")
-            quarantine_file(path)
-    else:
-        log(f"[!] No threats detected: {path}")
+# Ransomware Detection - Look for specific file extensions or behavior
+def detect_ransomware(path):
+    try:
+        if any(path.lower().endswith(ext) for ext in RANSOMWARE_EXTENSION_LIST):
+            log(f"[!!] Potential ransomware file detected: {path}")
+            return True
+    except Exception as e:
+        log(f"[!] Error checking for ransomware: {e}")
+    return False
 
-def extract_features(path):
-    file_size = os.path.getsize(path)
-    with open(path, "rb") as f:
-        data = f.read()
-    byte_frequencies = np.array([data.count(i) for i in range(256)])  # Byte frequency histogram
-    return np.concatenate([byte_frequencies, [file_size]])
+# Detecting Metasploit Payloads/Ports (e.g., reverse shell)
+def detect_metasploit_activity():
+    try:
+        # Check for active processes and their associated ports
+        for proc in psutil.process_iter(['pid', 'name', 'connections']):
+            for conn in proc.info['connections']:
+                if conn.status == 'LISTEN' and conn.laddr.port == 4444:  # Default Metasploit port
+                    log(f"[!!] Metasploit-related activity detected (Port 4444): Process {proc.info['name']} with PID {proc.info['pid']}")
+                    return True
+    except Exception as e:
+        log(f"[!] Error checking for Metasploit activity: {e}")
+    return False
 
 # === Real-Time File Watcher ===
 class RealTimeFileWatcher(FileSystemEventHandler):
