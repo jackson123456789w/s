@@ -6,7 +6,7 @@ import threading
 import json
 import psutil
 import numpy as np
-import tensorflow as tf
+import torch  # Replaced TensorFlow with PyTorch
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from PySide6.QtWidgets import (
@@ -21,10 +21,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QSystemTrayIcon,
-    QMenu,
-    QAction
+    QMenu
 )
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QAction  # Updated import for QAction
 from PySide6.QtCore import Qt, QThread, Signal
 from win10toast import ToastNotifier
 import PyPDF2  # For PDF scanning
@@ -50,7 +49,7 @@ THREAT_DATABASE_JSON = {
 
 QUARANTINE_DIR = os.path.join(os.getcwd(), "quarantine")
 LOG_FILE = "antivirus_log.txt"
-MACHINE_LEARNING_MODEL_PATH = "ml_model.h5"  # Machine learning model for file classification
+MACHINE_LEARNING_MODEL_PATH = "ml_model.pth"  # Updated file extension for PyTorch model
 RANSOMWARE_EXTENSION_LIST = [".encrypted", ".locked", ".ransom", ".crypto", ".wncry", ".wncryt", ".wcry"]  # Add more extensions as needed
 
 # Notification System
@@ -93,7 +92,8 @@ def delete_file(path):
 # Load machine learning model
 def load_ml_model():
     try:
-        model = tf.keras.models.load_model(MACHINE_LEARNING_MODEL_PATH)
+        model = torch.load(MACHINE_LEARNING_MODEL_PATH)  # Updated to load a PyTorch model
+        model.eval()  # Set the model to evaluation mode
         log("[*] Machine learning model loaded successfully.")
         return model
     except Exception as e:
@@ -150,32 +150,6 @@ def detect_ransomware(path):
             return True
     except Exception as e:
         log(f"[!] Error checking for ransomware: {e}")
-    return False
-
-# Detecting Metasploit Payloads/Ports (e.g., reverse shell)
-def detect_metasploit_activity():
-    try:
-        # Check for active processes and their associated ports
-        for proc in psutil.process_iter(['pid', 'name', 'connections']):
-            for conn in proc.info['connections']:
-                if conn.status == 'LISTEN' and conn.laddr.port in [4444, 5555, 6666]:  # Common Metasploit ports
-                    log(f"[!!] Metasploit-related activity detected (Port {conn.laddr.port}): Process {proc.info['name']} with PID {proc.info['pid']}")
-                    return True
-    except Exception as e:
-        log(f"[!] Error checking for Metasploit activity: {e}")
-    return False
-
-# Detect Reverse Shells and RATs
-def detect_reverse_shells():
-    try:
-        for proc in psutil.process_iter(['pid', 'name', 'connections']):
-            for conn in proc.info['connections']:
-                if conn.status == 'ESTABLISHED' and conn.raddr:
-                    if conn.raddr.port in [22, 23, 3389, 4444, 5555]:  # Common reverse shell/RAT ports
-                        log(f"[!!] Potential reverse shell detected: Process {proc.info['name']} with PID {proc.info['pid']}")
-                        return True
-    except Exception as e:
-        log(f"[!] Error checking for reverse shells: {e}")
     return False
 
 # === Real-Time File Watcher ===
