@@ -6,7 +6,7 @@ TARGET_DOMAIN = b"zsbitovska.com."
 FAKE_IP = "142.250.190.14"  # IP address of google.com
 
 # Interface to sniff on
-INTERFACE = "eth0"  # Change to your network interface (e.g., wlan0)
+INTERFACE = "WiFi 2"  # Change to your network interface (e.g., wlan0)
 
 def dns_spoof(pkt):
     if pkt.haslayer(DNS) and pkt.getlayer(DNS).qr == 0:  # DNS request
