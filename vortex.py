@@ -4,6 +4,7 @@ import time
 import shutil
 import hashlib
 import threading
+import json
 import psutil
 import numpy as np
 import tensorflow as tf
@@ -28,13 +29,14 @@ from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QThread, Signal
 
 # === Antivirus Core ===
-SIGNATURES = {
-    "44d88612fea8a8f36de82e1278abb02f": "EICAR-Test-File"
+THREAT_DATABASE_JSON = {
+    "signatures": {
+        "44d88612fea8a8f36de82e1278abb02f": "EICAR-Test-File"
+    }
 }
 QUARANTINE_DIR = os.path.join(os.getcwd(), "quarantine")
 LOG_FILE = "antivirus_log.txt"
 MACHINE_LEARNING_MODEL_PATH = "ml_model.h5"  # Machine learning model for file classification
-THREAT_DATABASE_URL = "https://example.com/api/threats"  # Placeholder for cloud threat database
 
 def hash_file(path):
     try:
@@ -84,8 +86,8 @@ def scan_file(path, model=None):
     md5 = hash_file(path)
     if not md5:
         return
-    if md5 in SIGNATURES:
-        log(f"[!!] Signature match ({SIGNATURES[md5]}): {path}")
+    if md5 in THREAT_DATABASE_JSON["signatures"]:
+        log(f"[!!] Signature match ({THREAT_DATABASE_JSON['signatures'][md5]}): {path}")
         quarantine_file(path)
     elif advanced_heuristic_check(path):
         log(f"[!!] Advanced heuristic threat detected: {path}")
