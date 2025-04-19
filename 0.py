@@ -2,7 +2,7 @@ from scapy.all import *
 import socket
 
 # Spoof settings
-TARGET_DOMAIN = b"zsbitovska.com."
+TARGET_DOMAIN = b"zsbitovska.cz"
 FAKE_IP = "142.250.190.14"  # IP address of google.com
 
 # Interface to sniff on
