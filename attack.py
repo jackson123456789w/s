@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-# Original Author: D4Vinci | Recoded by: codex31 | Cleaned by: igosad | Refactored by: ChatGPT
-
 import argparse
 import random
 import socket
