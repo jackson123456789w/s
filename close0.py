@@ -193,21 +193,23 @@ def arp_scan(network, iface):
         try:
             vendor = MacLookup().lookup(mac)
         except VendorNotFoundError:
-            vendor = 'unidentified'
-        print(f'{Fore.GREEN}IP: {ip} MAC: {mac} Vendor: {vendor}{Style.RESET_ALL}')
-        devices.append({'ip': ip, 'mac': mac, 'vendor': vendor})
-    return devices
+            vendor = 'unrecognized device'
+        devices.append((ip, mac, vendor))
+        print(f'{Fore.BLUE}{ip}{Style.RESET_ALL} ({mac}, {vendor})')
+    print(f'{Fore.YELLOW}0. Exit{Style.RESET_ALL}')
+    return input('\nPick a device IP: ')
 
 if __name__ == '__main__':
-    devices = arp_scan(opts.network, opts.iface)
-    for device in devices:
-        if device['ip'] == opts.routerip:
-            router_mac = device['mac']
+    while True:
+        targetip = arp_scan(opts.network, opts.iface)
+        if targetip == "0":
+            print(f'{Fore.YELLOW}Exiting...{Style.RESET_ALL}')
             break
-    target_device = next(d for d in devices if d['ip'] == opts.targetip)
-
-    # Create and run the device for sniffing
-    target = Device(opts.routerip, opts.targetip, opts.iface)
-    target.enable_ip_forwarding()
-    target.set_iptables()
-    target.sniff()
+        device = Device(opts.routerip, targetip, opts.iface)
+        device.enable_ip_forwarding()
+        device.set_iptables()
+        try:
+            device.sniff()
+        except KeyboardInterrupt:
+            print(f'\n{Fore.CYAN}Returning to menu...{Style.RESET_ALL}')
+            continue
