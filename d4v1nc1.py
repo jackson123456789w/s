@@ -1,5 +1,3 @@
-from Crypto.Cipher import XOR
-import os
 import random
 
 def xor_with_feedback(shellcode, key):
