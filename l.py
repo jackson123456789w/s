@@ -60,7 +60,7 @@ random.shuffle(questions)
 class EnglishGameApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("English Question Tag Game")
+        self.root.title("Vortex Game by Alfi Keita")
         self.score = 0
         self.q_index = 0
 
