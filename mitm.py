@@ -124,6 +124,7 @@ def http_sniff(self):
 
     sniff(iface=self.iface, prn=http_pkt_callback,
           filter=f'tcp port 80 and host {self.targetip}', store=0)
+    
     def enable_ip_forwarding(self):
         subprocess.call("echo 1 > /proc/sys/net/ipv4/ip_forward", shell=True)
         print(f'{Fore.GREEN}IP forwarding enabled!{Style.RESET_ALL}')
